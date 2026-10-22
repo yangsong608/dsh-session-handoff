@@ -33,7 +33,7 @@ profile 的 `dependencies` 决定从 npm 装还是 `link:` 本地目录。
 | 文档 | `docs/` 下 80+ 中英对照子系统文档；`AGENTS.md` 是给 Agent 的仓库规则 |
 | 客户端包 | `packages/client/*` 约 60 个 UI 包，按「能力 + slot 贡献」拆分 |
 | 扩展包 | `packages/extensions/*`：`cordis-host-runner`、`cordis-client-runner`、`tool-cordis`、`ui-cordis` |
-| 插件生态 | 本机 `~/.dsh/profiles/desktop/package.json` 已装 27 个 bundle，其中 20+ 为第三方插件 |
+| 插件生态 | 本机 `~/.dsh/profiles/desktop/package.json` 分析时已装 27 个 bundle（本插件安装后 28 个），其中 20+ 为第三方插件 |
 
 关键目录：
 

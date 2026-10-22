@@ -140,6 +140,7 @@ pnpm run check              # 全部跑一遍
 - 记忆台账目前是本插件自有格式（Markdown），与 `dsh-mnemon` 等记忆插件的自动同步在 v0.2。
 - `autoSend` 依赖半公开的 `sessions.retain/prompt`，DSH 内部改动时可能失效（自动回退草稿）。
 - 不做跨机器/跨用户传输：交接文档要不要进 Git、要不要发给别人，由用户决定。
+- npm 包名 `dsh-session-handoff` 已被一个无版本占位记录占用：正式发布（v1.0）将改用 scope（如 `@yangsong608/dsh-session-handoff`）或换名，插件/座位 id 不受影响。
 
 ## License
 

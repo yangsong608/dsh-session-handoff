@@ -11,6 +11,9 @@
 import type { HandoffConfig } from './config.ts'
 import type { Facts, HandoffData, LlmRuntimeLike, LlmStreamChunk } from './types.ts'
 
+/** max-tokens 截断时允许一次翻倍重试的硬上限。 */
+const MAX_RETRY_TOKENS = 16_384
+
 /** 固定摘要协议：只输出一个 JSON 对象。 */
 export const SYSTEM_PROMPT = `你是会话交接编辑。你会收到一个编码 Agent 会话的结构化事实集，需要把它写成「下一个会话可以直接接着干」的交接材料。
 
@@ -119,30 +122,80 @@ export function parseHandoff(raw: string): HandoffData | undefined {
   }
 }
 
+/** 取第一行/第一句，压缩空白。 */
+function firstLine(text: string, max = 160): string {
+  return clip(text.split(/\n/).find(line => line.trim() !== '') ?? '', max)
+}
+
+/**
+ * 从助手正文里剥离代码围栏与 dsh-ui JSON，只留可读的散文。
+ * 会话里大量 assistant 输出是 UI 规格/JSON，直接截断会产生「```dsh-ui」这种垃圾摘要。
+ */
+export function proseOf(text: string, max: number): string {
+  let value = String(text ?? '')
+  // 成对/未闭合的围栏代码块整块丢弃
+  value = value.replace(/```[\s\S]*?(?:```|$)/g, '')
+  value = value.replace(/[\u200b-\u200d\ufeff]/g, '')
+  const lines = value.split('\n').filter(line => {
+    const trimmed = line.trim()
+    if (trimmed === '') return true
+    // 标题、分割线、表格行、JSON/UI 规格行都不是可读的「完成项/现状」
+    if (/^#{1,6}\s/.test(trimmed)) return false
+    if (/^[-*_]{3,}$/.test(trimmed)) return false
+    if (/^\|/.test(trimmed)) return false
+    if (/^[\[{]/.test(trimmed)) return false
+    if (/^```/.test(trimmed)) return false
+    return true
+  })
+  const paragraphs = lines
+    .join('\n')
+    .split(/\n{2,}/)
+    .map(part => part.replace(/\s+/g, ' ').trim())
+    .filter(part => part.length >= 12)
+  return clip(paragraphs[0] ?? '', max)
+}
+
 /** 确定性兜底：不调用模型，用事实集拼出可用但不精致的交接内容。 */
 export function fallbackData(facts: Facts): HandoffData {
-  const first = facts.userMessages[0] ?? ''
-  const last = facts.userMessages.at(-1) ?? ''
-  const title = facts.title !== '' ? facts.title : (first.split(/[\n。！？!?]/)[0] ?? '').slice(0, 24) || '会话交接'
-  const changed = facts.files.slice(0, 12)
+  const asks = facts.userMessages
+  const latest = asks.at(-1) ?? ''
+  const first = asks[0] ?? ''
+  const title = facts.title !== ''
+    ? facts.title
+    : (firstLine(latest !== '' ? latest : first, 48).replace(/[。！？!?].*$/, '') || '会话交接')
+  // 完成项只从「可读的助手正文」提炼：跳过围栏代码/dsh-ui JSON，避免把 UI 规格当成果。
   const completed: string[] = []
-  for (const file of changed.slice(0, 6)) completed.push(`已改/读过 ${file}`)
-  for (const text of facts.assistantTexts.slice(-3)) completed.push(clip(text.split('\n')[0], 200))
-  const blockers = [...facts.failures.slice(0, 6)]
+  const seen = new Set<string>()
+  for (const text of facts.assistantTexts.slice(-6)) {
+    const prose = proseOf(text, 160)
+    if (prose.length < 8 || seen.has(prose)) continue
+    seen.add(prose)
+    completed.push(prose)
+  }
+  let current = ''
+  for (const text of [...facts.assistantTexts].reverse()) {
+    current = proseOf(text, 300)
+    if (current !== '') break
+  }
+  const blockers = facts.failures.slice(-5).map(failure => `历史失败：${clip(failure, 240)}`)
+  const latestAsk = firstLine(latest, 120)
   return {
     title,
-    summary: last !== ''
-      ? `最近一次诉求：${clip(last.split('\n')[0], 160)}`
+    summary: latestAsk !== ''
+      ? `最近一次诉求：${latestAsk}`
       : `共 ${facts.eventCount} 条事件、${facts.tools.length} 次工具调用`,
-    goal: first !== '' ? clip(first, 600) : last !== '' ? clip(last, 600) : '（未记录到用户诉求）',
-    completed,
+    goal: latest !== '' ? clip(latest, 600) : first !== '' ? clip(first, 600) : '（未记录到用户诉求）',
+    completed: completed.slice(-5),
     decisions: [],
     state: {
-      current: facts.assistantTexts.at(-1)?.slice(0, 500) ?? '（模型摘要不可用，仅保留确定性事实）',
+      current: current !== '' ? current : '（模型摘要不可用，且未找到可读的助手正文；请看参考文件与工具附录）',
       files: facts.files.slice(0, 40),
       blockers,
     },
-    nextSteps: [{ step: '阅读本交接文档与列出的参考文件，确认现状后继续', why: '模型摘要不可用，先以事实集为准' }],
+    nextSteps: [
+      ...(latestAsk !== '' ? [{ step: `先读交接文档，再继续处理：${latestAsk}`, why: '模型摘要不可用，以最近一次诉求作为继续点' }] : []),
+      { step: '核对参考文件与当前工作区状态，再决定下一步', why: '确定性摘要不含推断，只保留事实' },
+    ].slice(0, 2),
     memoryCandidates: [],
   }
 }
@@ -203,9 +256,16 @@ export function buildDigest(facts: Facts, maxChars: number): string {
 }
 
 /** 读取一次性补全的文本（只关心文本块与终止原因）。 */
-async function readCompletion(stream: AsyncIterable<LlmStreamChunk>): Promise<string> {
+interface Completion {
+  text: string
+  /** 终止原因：stop / max-tokens / error / aborted / unknown。 */
+  finish: string
+}
+
+async function readCompletion(stream: AsyncIterable<LlmStreamChunk>): Promise<Completion> {
   let text = ''
   let finished = false
+  let finish = 'unknown'
   for await (const chunk of stream) {
     if (chunk === null || typeof chunk !== 'object') continue
     if (chunk.type === 'text-delta' && typeof chunk.text === 'string') text += chunk.text
@@ -213,15 +273,16 @@ async function readCompletion(stream: AsyncIterable<LlmStreamChunk>): Promise<st
       text = chunk.block.text === '' ? text : chunk.block.text
     } else if (chunk.type === 'finish') {
       finished = true
-      const kind = chunk.reason?.kind ?? 'unknown'
-      if (kind !== 'stop') {
-        const code = chunk.reason?.failure?.code ?? kind
-        throw new Error(`模型以 ${kind} 结束（${code}）`)
+      finish = chunk.reason?.kind ?? 'unknown'
+      if (finish === 'error' || finish === 'aborted') {
+        const code = chunk.reason?.failure?.code ?? finish
+        throw new Error(`模型以 ${finish} 结束（${code}）`)
       }
     }
   }
   if (!finished) throw new Error('模型流未给出终止原因')
-  return text.trim()
+  // max-tokens 也保留已产出的文本：JSON 可能仍然完整，交给上层解析/重试判断。
+  return { text: text.trim(), finish }
 }
 
 /** 调用一次模型做归纳；失败时不抛出，交给调用方降级。 */
@@ -244,23 +305,32 @@ export async function summarize(
     return { data: fallbackData(facts), llm: false, degraded }
   }
   const digest = buildDigest(facts, config.maxInputChars)
-  try {
-    const stream = runtime.llm.stream({
+  const attempt = async (maxTokens: number): Promise<{ parsed: HandoffData | undefined; finish: string }> => {
+    const stream = runtime.llm!.stream({
       provider: route.provider,
       model: route.model,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: [{ type: 'text', text: digest }] }],
       temperature: 0,
-      maxTokens: config.maxTokens,
+      maxTokens,
       signal,
     })
-    const raw = await readCompletion(stream)
-    const parsed = parseHandoff(raw)
-    if (parsed === undefined) {
-      degraded.push('llm-unparseable')
+    const completion = await readCompletion(stream)
+    return { parsed: parseHandoff(completion.text), finish: completion.finish }
+  }
+  try {
+    let result = await attempt(config.maxTokens)
+    if (result.parsed === undefined && result.finish === 'max-tokens' && config.maxTokens < MAX_RETRY_TOKENS) {
+      const retryTokens = Math.min(MAX_RETRY_TOKENS, config.maxTokens * 2)
+      degraded.push(`llm-retried-max-tokens:${config.maxTokens}→${retryTokens}`)
+      result = await attempt(retryTokens)
+    }
+    if (result.parsed === undefined) {
+      degraded.push(`llm-unparseable:${result.finish}`)
       return { data: fallbackData(facts), llm: false, degraded }
     }
-    return { data: parsed, llm: true, model: `${route.provider}/${route.model}`, degraded }
+    if (result.finish === 'max-tokens') degraded.push('llm-max-tokens-accepted')
+    return { data: result.parsed, llm: true, model: `${route.provider}/${route.model}`, degraded }
   } catch (cause) {
     degraded.push(`llm-failed:${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 300))
     return { data: fallbackData(facts), llm: false, degraded }

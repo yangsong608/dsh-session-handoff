@@ -251,6 +251,13 @@ export function buildPromptText(
   return out.length <= budget ? out : `${out.slice(0, budget)}\n…（提示词已按预算截断，完整内容见交接文档）`
 }
 
+/** 本地时间戳（台账给人读，不用 UTC 的 ISO 截断）。 */
+function localStamp(ms: number): string {
+  const date = new Date(ms)
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 /** 记忆台账的新增片段（已存在的内容不重复追加）。 */
 export function memoryDelta(
   existing: string,
@@ -261,7 +268,7 @@ export function memoryDelta(
   if (candidates.length === 0) return { block: '', added: 0 }
   const fresh = candidates.filter(candidate => !existing.includes(candidate.text))
   if (fresh.length === 0) return { block: '', added: 0 }
-  const stamp = new Date(facts.capturedAt).toISOString().slice(0, 16).replace('T', ' ')
+  const stamp = localStamp(facts.capturedAt)
   const lines: string[] = []
   lines.push('')
   lines.push(`## ${stamp} · ${data.title}`)

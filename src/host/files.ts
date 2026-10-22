@@ -98,6 +98,38 @@ export async function createRunDir(root: string, name: string): Promise<string> 
   throw new Error(`无法创建交接目录：${join(root, name)}`)
 }
 
+/**
+ * 过滤参考文件：绝对路径必须存在，工作区内优先，其次相对路径，最后外部绝对路径。
+ * 目的是避免把 /tmp 临时截图或历史错误里的畸形路径带进交接文档与新会话提示词。
+ */
+export async function filterReferences(base: string, files: readonly string[], limit = 40): Promise<string[]> {
+  const seen = new Set<string>()
+  const inside: string[] = []
+  const relativeFiles: string[] = []
+  const outside: string[] = []
+  const root = base === '' ? '' : resolve(base)
+  for (const raw of files) {
+    const file = String(raw ?? '').trim()
+    if (file === '' || seen.has(file)) continue
+    seen.add(file)
+    if (!isAbsolute(file)) {
+      relativeFiles.push(file)
+      continue
+    }
+    let normalized: string
+    try {
+      normalized = resolve(file)
+    } catch {
+      continue
+    }
+    if (!(await exists(normalized))) continue
+    const rel = root === '' ? '..' : relative(root, normalized)
+    if (rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)) inside.push(normalized)
+    else outside.push(normalized)
+  }
+  return [...inside, ...relativeFiles, ...outside].slice(0, limit)
+}
+
 /** 站内相对路径（用于日志与返回值展示）。 */
 export function displayPath(base: string, target: string): string {
   const rel = relative(resolve(base), resolve(target))

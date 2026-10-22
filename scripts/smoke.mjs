@@ -5,7 +5,7 @@
  *
  * 不启动 DSH、不安装插件、不联网：验证的是插件自己的契约与降级路径。
  */
-import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -93,7 +93,7 @@ async function call(path, request) {
   return { status: response.status, json: JSON.parse(response.body || '{}') }
 }
 
-check('暴露版本号', VERSION === '0.2.2', VERSION)
+check('暴露版本号', VERSION === '0.2.3', VERSION)
 check('注册 health 路由', routes.has('/session-handoff/health'))
 check('注册 prepare 路由', routes.has('/session-handoff/prepare'))
 
@@ -274,6 +274,117 @@ await rm(cwd3, { recursive: true, force: true })
   check('严格代理下 prepare 不因 llm 直读失败', strictResult.ok === true, strictResult.message)
   check('严格代理下走确定性降级', strictResult.stats?.llm === false)
   await rm(strictCwd, { recursive: true, force: true })
+}
+
+// ---------- 摘要健壮性 / 标题 / 兜底质量 / 参考文件过滤 ----------
+const GOOD = '{"title":"截断但可用","summary":"摘要","goal":"目标","completed":["完成"],"decisions":[],"state":{"current":"状态","files":[],"blockers":[]},"nextSteps":[{"step":"继续","why":"原因"}],"memoryCandidates":[]}'
+
+async function prepareFixture(name, { events, llm, config = {} }) {
+  const base = await mkdtemp(join(tmpdir(), `dsh-handoff-${name}-`))
+  const map = new Map()
+  const ctx = {
+    webServer: { register(route) { map.set(route.path, route.handler); return () => {} } },
+    logger: { info() {}, warn() {} },
+    get(service) {
+      if (service === 'sessionQuery') {
+        return { async readSession(id) { return { session: { id, cwd: base }, events } } }
+      }
+      if (service === 'llm') return llm
+      return undefined
+    },
+  }
+  apply(ctx, { dir: '.dsh-handoff', writeMemory: false, ...config })
+  const res = makeRes()
+  map.get('/session-handoff/prepare')(makeReq({ headers: { 'x-dsh-handoff': '1' }, body: JSON.stringify({ sessionId: 's' }) }), res)
+  const deadline = Date.now() + 10_000
+  while (res.body === '' && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10))
+  const result = JSON.parse(res.body)
+  return { base, result }
+}
+
+const baseEvents = [
+  { type: 'user/message', seq: 1, time: 1, data: { content: [{ type: 'text', text: '分析一下项目工程' }], source: { kind: 'user' } } },
+  { type: 'user/message', seq: 2, time: 2, data: { content: [{ type: 'text', text: '修复工作台数据读取失败' }], source: { kind: 'user' } } },
+]
+const routeConfig = { provider: 'deepseek', model: 'deepseek-chat' }
+
+// max-tokens 但 JSON 完整：应当接受而不是整单降级。
+{
+  const { base, result } = await prepareFixture('maxtokens-ok', {
+    events: baseEvents,
+    config: routeConfig,
+    llm: {
+      async *stream() {
+        yield { type: 'text-delta', index: 0, text: GOOD }
+        yield { type: 'finish', reason: { kind: 'max-tokens' } }
+      },
+    },
+  })
+  check('max-tokens 但内容可解析时仍采用模型摘要', result.ok === true && result.stats?.llm === true)
+  check('max-tokens 采用时标记 degraded', (result.degraded ?? []).some(item => String(item).includes('llm-max-tokens-accepted')), JSON.stringify(result.degraded))
+  await rm(base, { recursive: true, force: true })
+}
+
+// 第一次截断失败、第二次成功：应自动翻倍重试一次。
+{
+  let calls = 0
+  const { base, result } = await prepareFixture('maxtokens-retry', {
+    events: baseEvents,
+    config: routeConfig,
+    llm: {
+      async *stream() {
+        calls += 1
+        if (calls === 1) {
+          yield { type: 'text-delta', index: 0, text: '{"title":"半截"' }
+          yield { type: 'finish', reason: { kind: 'max-tokens' } }
+        } else {
+          yield { type: 'text-delta', index: 0, text: GOOD }
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        }
+      },
+    },
+  })
+  check('max-tokens 截断会重试一次', result.ok === true && result.stats?.llm === true && calls === 2, `calls=${calls}`)
+  check('重试记录在 degraded', (result.degraded ?? []).some(item => String(item).includes('llm-retried-max-tokens')), JSON.stringify(result.degraded))
+  await rm(base, { recursive: true, force: true })
+}
+
+// 无模型兜底：标题取 session/title，正文剥离 dsh-ui/围栏，不把 JSON 当完成项。
+{
+  const events = [
+    { type: 'session/title', seq: 1, time: 1, data: { title: '项目工程分析' } },
+    ...baseEvents,
+    { type: 'assistant/message', seq: 3, time: 3, data: { message: { role: 'assistant', content: [
+      { type: 'text', text: '```dsh-ui\n{"gap":14,"title":"工作台数据读取失败 · 已修复"}\n```\n已定位并修复工作台数据读取失败，1.9.3 已推送。' },
+    ] } } },
+  ]
+  const { base, result } = await prepareFixture('fallback-prose', { events })
+  const doc = await readFile(result.docPath, 'utf8')
+  check('标题优先取 session/title 事件', result.title === '项目工程分析', result.title)
+  check('兜底正文剥离 dsh-ui JSON', !doc.includes('"gap"') && !doc.includes('dsh-ui'), doc.includes('"gap"') ? '仍含 gap' : '')
+  check('兜底完成项取可读正文', (result.data?.completed ?? []).some(item => String(item).includes('已定位并修复')), JSON.stringify(result.data?.completed))
+  await rm(base, { recursive: true, force: true })
+}
+
+// 参考文件过滤：存在的工作区文件保留，缺失的绝对路径丢弃。
+{
+  const base = await mkdtemp(join(tmpdir(), 'dsh-handoff-refs-'))
+  const existing = join(base, 'exists.md')
+  await writeFile(existing, 'x')
+  const missing = '/tmp/definitely-missing-handoff-ref.md'
+  const { result } = await prepareFixture('refs', {
+    events: [
+      ...baseEvents,
+      { type: 'tool/call', seq: 3, time: 3, data: { name: 'write', callId: 'c1', arguments: JSON.stringify({ path: existing }) } },
+      { type: 'tool/result', seq: 4, time: 4, data: { message: { role: 'tool', toolCallId: 'c1', isError: false, content: [{ type: 'text', text: 'ok' }] } } },
+      { type: 'tool/call', seq: 5, time: 5, data: { name: 'read', callId: 'c2', arguments: JSON.stringify({ path: missing }) } },
+      { type: 'tool/result', seq: 6, time: 6, data: { message: { role: 'tool', toolCallId: 'c2', isError: false, content: [{ type: 'text', text: 'ok' }] } } },
+    ],
+  })
+  const doc = await readFile(result.docPath, 'utf8')
+  check('参考文件保留真实存在的路径', (result.promptParts?.referenceOptions ?? []).includes(existing), JSON.stringify(result.promptParts?.referenceOptions))
+  check('参考文件丢弃不存在的绝对路径', !result.promptText.includes(missing) && !(result.promptParts?.referenceOptions ?? []).includes(missing))
+  await rm(base, { recursive: true, force: true })
 }
 
 await rm(cwd, { recursive: true, force: true })

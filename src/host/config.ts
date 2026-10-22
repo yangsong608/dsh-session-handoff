@@ -46,7 +46,7 @@ export const DEFAULTS: HandoffConfig = {
   writeMemory: true,
   provider: '',
   model: '',
-  maxTokens: 4096,
+  maxTokens: 8192,
   maxInputChars: 80_000,
   maxToolCalls: 400,
   promptCharBudget: 6000,

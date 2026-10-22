@@ -16,7 +16,7 @@ import { isAbsolute, join } from 'node:path'
 import { DEFAULTS, readConfig, type HandoffConfig } from './config.ts'
 import { COLLECT_LIMITS, collectFacts } from './collect.ts'
 import {
-  appendWithRoll, createRunDir, exists, resolveInside, slug, stamp, writeAtomic,
+  appendWithRoll, createRunDir, exists, filterReferences, resolveInside, slug, stamp, writeAtomic,
 } from './files.ts'
 import { buildPromptParts, buildPromptText, MEMORY_HEADER, memoryDelta, renderJson, renderMarkdown } from './render.ts'
 import { summarize } from './summary.ts'
@@ -26,7 +26,7 @@ import type {
 } from './types.ts'
 
 /** 版本号：与 package.json 保持一致（宿主半不 import JSON，避免 loader 差异）。 */
-export const VERSION = '0.2.2'
+export const VERSION = '0.2.3'
 
 const PREFIX = '[dsh-session-handoff]'
 const ROUTE_HEALTH = '/session-handoff/health'
@@ -253,6 +253,10 @@ async function prepare(
   }
   const data: HandoffData = outcome.data
   if (normalizeTitle(facts.title) !== '' && normalizeTitle(data.title) === '') data.title = facts.title
+  // 参考文件只保留真实存在/可解释的路径：工作区内优先，去掉临时文件与历史畸形路径。
+  const references = await filterReferences(facts.cwd, [...data.state.files, ...facts.files])
+  facts.files = references
+  if (data.state.files.length > 0) data.state.files = references
   const root = resolveInside(facts.cwd, config.dir)
   // 记忆台账是增强项：写失败只降级记录，不能让已经可用的交接文档整单失败。
   let memoryPath: string | undefined

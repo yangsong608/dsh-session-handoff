@@ -57,6 +57,7 @@ const PATCH_FILE = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm
 export function pathsFromArguments(name: string, raw: string): { files: string[]; commands: string[] } {
   const files: string[] = []
   const commands: string[] = []
+  let titleFromEvent = ''
   const push = (list: string[], value: unknown): void => {
     if (typeof value !== 'string') return
     const trimmed = value.trim()
@@ -141,6 +142,7 @@ export function collectFacts(
   const callIndex = new Map<string, ToolFact>()
   const files: string[] = []
   const commands: string[] = []
+  let titleFromEvent = ''
   const userMessages: string[] = []
   const injected: string[] = []
   const assistants: string[] = []
@@ -199,6 +201,11 @@ export function collectFacts(
         if (failed) failures.push(excerpt(`${fact?.name ?? 'tool'} 失败：${text}`, 600))
         break
       }
+      case 'session/title': {
+        const title = String(eventData(event, 'title') ?? '').trim()
+        if (title !== '') titleFromEvent = title
+        break
+      }
       case 'compaction/summary': {
         const text = contentText(eventData(event, 'summary'))
         if (text !== '') compaction.push(excerpt(text, 3_000))
@@ -216,6 +223,8 @@ export function collectFacts(
     }
   }
 
+  // 标题是投影事件（session/title），SessionHeader 里通常为空；最新事件优先。
+  if (titleFromEvent !== '') facts.title = titleFromEvent
   facts.userMessages = userMessages.slice(-limits.maxUserMessages)
   facts.injectedMessages = injected.slice(-limits.maxAssistantTexts)
   facts.assistantTexts = assistants.slice(-limits.maxAssistantTexts)

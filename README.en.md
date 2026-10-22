@@ -79,10 +79,10 @@ pnpm install
 pnpm run bundle
 pnpm run typecheck
 pnpm run verify        # 29 artifact-contract checks
-node scripts/smoke.mjs # 32 host-side end-to-end checks with a fake ctx
+node scripts/smoke.mjs # 35 host-side end-to-end checks with a fake ctx
 ```
 
-Baseline: DSH `0.2.1-rc.2`, node 24 — `tsc` clean, `verify` 29/29, `smoke` 32/32.
+Baseline: DSH `0.2.1-rc.2`, node 24 — `tsc` clean, `verify` 29/29, `smoke` 35/35.
 
 ## Docs
 

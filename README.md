@@ -108,10 +108,10 @@ pnpm install
 pnpm run bundle       # lib/index.js（host） + lib/client.js（浏览器模块工厂）
 pnpm run typecheck    # tsc --noEmit
 pnpm run verify       # 29 项产物契约自检
-node scripts/smoke.mjs # 32 项宿主半端到端冒烟（假 ctx + 临时目录，不启动 DSH）
+node scripts/smoke.mjs # 35 项宿主半端到端冒烟（假 ctx + 临时目录，不启动 DSH）
 ```
 
-当前基线（DSH 0.2.1-rc.2 / node 24）：`tsc` 0 错误、`verify` 29/29、`smoke` 32/32。
+当前基线（DSH 0.2.1-rc.2 / node 24）：`tsc` 0 错误、`verify` 29/29、`smoke` 35/35。
 
 ## 兼容性
 

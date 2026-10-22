@@ -31,7 +31,7 @@ const ctx = {
   effect: callback => callback(),
   sessionQuery: {
     async readSession(sessionId) {
-      if (sessionId !== 'session-smoke') throw new Error('missing')
+      if (sessionId !== 'session-smoke') throw new Error('session not found: ' + sessionId)
       return {
         session: { id: sessionId, title: '冒烟测试会话', cwd, createdAt: Date.UTC(2026, 9, 23) },
         events: [
@@ -109,7 +109,7 @@ const missing = await call('/session-handoff/prepare', makeReq({
   headers: { 'x-dsh-handoff': '1' },
   body: JSON.stringify({ sessionId: 'no-such-session' }),
 }))
-check('未知会话返回内部错误码', missing.status === 500 && missing.json.ok === false, `status=${missing.status} code=${missing.json.code}`)
+check('未知会话返回 404', missing.status === 404 && missing.json.code === 'session-not-found', `status=${missing.status} code=${missing.json.code}`)
 
 const prepared = await call('/session-handoff/prepare', makeReq({
   headers: { 'x-dsh-handoff': '1' },
@@ -175,6 +175,40 @@ check('无模型时标记降级原因', (degraded.degraded ?? []).some(item => /
 const degradedDoc = await readFile(degraded.docPath, 'utf8')
 check('降级文档标记 deterministic', degradedDoc.includes('generated_by: dsh-session-handoff/deterministic'))
 check('降级文档保留确定性事实', degradedDoc.includes('git status'))
+
+// 会话没有绝对 cwd：必须 409 而不是写坏路径。
+const routes3 = new Map()
+const ctx3 = {
+  ...ctx,
+  webServer: { register(route) { routes3.set(route.path, route.handler); return () => routes3.delete(route.path) } },
+  sessionQuery: { async readSession(id) { return { session: { id, title: '无目录会话' }, events: [] } } },
+}
+apply(ctx3, {})
+const res3 = makeRes()
+routes3.get('/session-handoff/prepare')(makeReq({ headers: { 'x-dsh-handoff': '1' }, body: JSON.stringify({ sessionId: 'session-smoke' }) }), res3)
+const deadline3 = Date.now() + 10_000
+while (res3.body === '' && Date.now() < deadline3) await new Promise(resolve => setTimeout(resolve, 10))
+const noCwd = JSON.parse(res3.body)
+check('无 cwd 会话返回 409', noCwd.ok === false && noCwd.code === 'no-cwd', JSON.stringify(noCwd))
+
+// memoryFile 只接受纯文件名：越界配置回退，且绝不在工作区外落文件。
+const cwd2 = await mkdtemp(join(tmpdir(), 'dsh-handoff-smoke2-'))
+const routes4 = new Map()
+const ctx4 = {
+  ...ctx,
+  webServer: { register(route) { routes4.set(route.path, route.handler); return () => routes4.delete(route.path) } },
+  sessionQuery: { async readSession(id) { return { session: { id, title: '路径安全测试', cwd: cwd2 }, events: [] } } },
+}
+apply(ctx4, { provider: 'deepseek', model: 'deepseek-chat', memoryFile: '../escape.md', dir: '.dsh-handoff' })
+const res4 = makeRes()
+routes4.get('/session-handoff/prepare')(makeReq({ headers: { 'x-dsh-handoff': '1' }, body: JSON.stringify({ sessionId: 'session-smoke' }) }), res4)
+const deadline4 = Date.now() + 10_000
+while (res4.body === '' && Date.now() < deadline4) await new Promise(resolve => setTimeout(resolve, 10))
+const escaped = JSON.parse(res4.body)
+const outside = await stat(join(cwd2, '..', 'escape.md')).then(() => true).catch(() => false)
+check('越界 memoryFile 不回退到工作区外', escaped.ok === true && outside === false, `outside=${outside}`)
+check('越界 memoryFile 回退为默认台账', await stat(join(cwd2, '.dsh-handoff', '交接记忆.md')).then(() => true).catch(() => false))
+await rm(cwd2, { recursive: true, force: true })
 
 await rm(cwd, { recursive: true, force: true })
 

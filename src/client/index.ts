@@ -56,15 +56,27 @@ interface WorkspaceNavigationFace {
   openSession?(target: unknown): void
 }
 
+/** 组件从标准 props 里取到的目标提示（用于把新会话落回同一个工作区）。 */
+interface SessionHint {
+  workspaceId?: string
+  cwd?: string
+}
+
 /** 组件拿到的注入面：一次点击的全部副作用。 */
 interface HandoffInjectedFace {
-  run(sessionId: string): Promise<{ title: string; mode: 'draft' | 'sent' }>
+  run(sessionId: string, hint?: SessionHint): Promise<{ title: string; mode: 'draft' | 'sent' }>
+}
+
+interface SnapshotHook {
+  (selector: (snapshot: any) => unknown): unknown
 }
 
 interface HandoffButtonProps {
   sessionId?: string
   t?: (key: string) => string
   run?: HandoffInjectedFace['run']
+  useWorkspaces?: SnapshotHook
+  useSession?: SnapshotHook
 }
 
 const ZH: Record<string, string> = {
@@ -110,12 +122,15 @@ async function openWithPrompt(
   ctx: ClientContextLike,
   promptText: string,
   autoSend: boolean,
+  hint: SessionHint = {},
 ): Promise<'draft' | 'sent'> {
   const nav = softGet(ctx, 'uiWorkspace') as WorkspaceNavigationFace | undefined
   const sessions = softGet(ctx, 'sessions') as SessionsFace | undefined
   if (autoSend && sessions !== undefined && typeof sessions.create === 'function' && nav?.openSession !== undefined) {
     try {
-      const created = await sessions.create({})
+      const created = await sessions.create(hint.workspaceId !== undefined
+        ? { workspaceId: hint.workspaceId }
+        : hint.cwd !== undefined ? { cwd: hint.cwd } : {})
       const sessionId = String(created ?? '')
       if (sessionId === '') throw new Error('sessions.create 未返回会话 id')
       await sendToSession(sessions, sessionId, promptText)
@@ -127,11 +142,13 @@ async function openWithPrompt(
     }
   }
   if (nav !== undefined && typeof nav.startSession === 'function') {
-    nav.startSession(undefined, { prompt: promptText })
+    nav.startSession(hint.workspaceId, { prompt: promptText })
     return 'draft'
   }
   if (sessions !== undefined && typeof sessions.create === 'function') {
-    const sessionId = String(await sessions.create({}) ?? '')
+    const sessionId = String(await sessions.create(hint.workspaceId !== undefined
+      ? { workspaceId: hint.workspaceId }
+      : hint.cwd !== undefined ? { cwd: hint.cwd } : {}) ?? '')
     if (sessionId === '') throw new Error('sessions.create 未返回会话 id')
     await sendToSession(sessions, sessionId, promptText)
     const open = (softGet(ctx, 'uiWorkspace') as WorkspaceNavigationFace | undefined)?.openSession
@@ -160,7 +177,11 @@ async function sendToSession(sessions: SessionsFace, sessionId: string, text: st
 }
 
 /** 请求宿主生成交接包，并打开新会话。 */
-async function requestHandoff(ctx: ClientContextLike, sessionId: string): Promise<{ title: string; mode: 'draft' | 'sent' }> {
+async function requestHandoff(
+  ctx: ClientContextLike,
+  sessionId: string,
+  hint: SessionHint = {},
+): Promise<{ title: string; mode: 'draft' | 'sent' }> {
   const response = await fetch(API_PREPARE, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-dsh-handoff': '1' },
@@ -174,13 +195,24 @@ async function requestHandoff(ctx: ClientContextLike, sessionId: string): Promis
     if (response.status === 404) throw new Error(`${detail}（宿主端点未注册：确认插件宿主半已启用）`)
     throw new Error(detail)
   }
-  const mode = await openWithPrompt(ctx, body.promptText, body.autoSend === true)
+  const mode = await openWithPrompt(ctx, body.promptText, body.autoSend === true, hint)
   return { title: typeof body.title === 'string' ? body.title : '会话交接', mode }
 }
 
 /** 按钮：紧凑图标 + 悬停说明；生成中显示转圈，完成态短暂打勾变绿。 */
-function HandoffButton({ sessionId, t, run }: HandoffButtonProps): unknown {
+function HandoffButton({ sessionId, t, run, useWorkspaces, useSession }: HandoffButtonProps): unknown {
   const [busy, setBusy] = useState(false)
+  // 目标工作区/目录来自标准 props：新会话必须落在同一个工作区，而不是 DSH 的默认目录。
+  const workspaceId = typeof useWorkspaces === 'function'
+    ? useWorkspaces(snapshot => {
+      const items = Array.isArray(snapshot?.items) ? snapshot.items as Array<{ workspaceId?: string; sessionIds?: string[] }> : []
+      for (const item of items) {
+        if (Array.isArray(item.sessionIds) && sessionId !== undefined && item.sessionIds.includes(sessionId)) return item.workspaceId
+      }
+      return undefined
+    })
+    : undefined
+  const cwd = typeof useSession === 'function' ? useSession(snapshot => typeof snapshot?.cwd === 'string' ? snapshot.cwd : undefined) : undefined
   const latch = useDoneLatch()
   const text = useCallback((key: string): string => {
     const translated = typeof t === 'function' ? t(key) : undefined
@@ -194,7 +226,10 @@ function HandoffButton({ sessionId, t, run }: HandoffButtonProps): unknown {
     void (async () => {
       try {
         if (run === undefined) throw new Error('注入面缺失')
-        const result = await run(sessionId)
+        const result = await run(sessionId, {
+          ...(typeof workspaceId === 'string' ? { workspaceId } : {}),
+          ...(typeof cwd === 'string' ? { cwd } : {}),
+        })
         latch.succeed()
         toast(`${text(result.mode === 'sent' ? 'toast.sent' : 'toast.draft')}${result.title}`)
       } catch (cause) {
@@ -249,7 +284,7 @@ function registerButton(ctx: ClientContextLike, canLocale: boolean, run: Handoff
 /** 插件入口。 */
 export function apply(ctx: ClientContextLike): void {
   ensureStyles()
-  const run: HandoffInjectedFace['run'] = sessionId => requestHandoff(ctx, sessionId)
+  const run: HandoffInjectedFace['run'] = (sessionId, hint) => requestHandoff(ctx, sessionId, hint)
   const locale = softGet(ctx, 'locale') as { register?(namespace: string, dictionaries: Record<string, unknown>): unknown } | undefined
   const canLocale = locale !== undefined && typeof locale.register === 'function' && typeof ctx.effect === 'function'
   if (canLocale && typeof ctx.effect === 'function') {

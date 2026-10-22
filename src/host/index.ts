@@ -11,7 +11,7 @@
  */
 
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 import { DEFAULTS, readConfig, type HandoffConfig } from './config.ts'
 import { COLLECT_LIMITS, collectFacts } from './collect.ts'
@@ -185,7 +185,17 @@ async function readSnapshot(
 ): Promise<{ snapshot: SessionLogSnapshotLike; degraded: string[] }> {
   const query = service<SessionQueryLike>(ctx, 'sessionQuery')
   if (query !== undefined && typeof query.readSession === 'function') {
-    const snapshot = await query.readSession(sessionId)
+    let snapshot: SessionLogSnapshotLike
+    try {
+      snapshot = await query.readSession(sessionId)
+    } catch (cause) {
+      // 查询后端对「不存在」的措辞不稳定：能识别的映射成 404，其余保留 500 与原始信息。
+      const message = cause instanceof Error ? cause.message : String(cause)
+      if (/not[ _-]?found|unknown session|no such|missing session/i.test(message)) {
+        throw new HandoffError('session-not-found', `找不到会话 ${sessionId}`, 404)
+      }
+      throw new HandoffError('internal', `读取会话失败：${message}`, 500)
+    }
     if (snapshot === undefined || snapshot.session === undefined) {
       throw new HandoffError('session-not-found', `找不到会话 ${sessionId}`, 404)
     }
@@ -217,6 +227,7 @@ async function prepare(
   const facts: Facts = collectFacts(read.snapshot, { ...COLLECT_LIMITS, maxToolCalls: config.maxToolCalls })
   for (const marker of read.degraded) facts.degraded.push(marker)
   if (facts.cwd === '') throw new HandoffError('no-cwd', '会话没有工作目录（cwd），无法写入交接文档', 409)
+  if (!isAbsolute(facts.cwd)) throw new HandoffError('no-cwd', `会话工作目录不是绝对路径：${facts.cwd}`, 409)
 
   const timeout = Math.min(MAX_TIMEOUT_MS, Math.max(1_000, config.timeoutMs))
   const controller = new AbortController()

@@ -62,5 +62,13 @@
     "@types/react": "~18.3.31",
     "tsdown": "^0.22.14",
     "typescript": "^6.0.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yangsong608/dsh-session-handoff.git"
+  },
+  "homepage": "https://github.com/yangsong608/dsh-session-handoff#readme",
+  "bugs": {
+    "url": "https://github.com/yangsong608/dsh-session-handoff/issues"
   }
 }

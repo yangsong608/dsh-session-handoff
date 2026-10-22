@@ -92,6 +92,17 @@ function relativeDir(value: unknown, fallback: string, warnings: string[], key: 
   return normalized
 }
 
+/** 只接受纯文件名（不含路径分隔符/越界段），否则回退。 */
+function fileName(value: unknown, fallback: string, warnings: string[], key: string): string {
+  const raw = text(value, fallback, warnings, key).trim()
+  if (raw === '') return fallback
+  if (raw.length > 80 || raw === '.' || raw === '..' || raw.includes('/') || raw.includes('\\')) {
+    warnings.push(`${key}: 只接受纯文件名（不含路径分隔符），已回退 ${fallback}`)
+    return fallback
+  }
+  return raw
+}
+
 /** 校验任意原始配置并返回规范化结果与告警。 */
 export function readConfig(raw: unknown): { config: HandoffConfig; warnings: string[] } {
   const warnings: string[] = []
@@ -99,7 +110,7 @@ export function readConfig(raw: unknown): { config: HandoffConfig; warnings: str
   const config: HandoffConfig = {
     enabled: bool(source['enabled'], DEFAULTS.enabled, warnings, 'enabled'),
     dir: relativeDir(source['dir'], DEFAULTS.dir, warnings, 'dir'),
-    memoryFile: text(source['memoryFile'], DEFAULTS.memoryFile, warnings, 'memoryFile').trim() || DEFAULTS.memoryFile,
+    memoryFile: fileName(source['memoryFile'], DEFAULTS.memoryFile, warnings, 'memoryFile'),
     writeMemory: bool(source['writeMemory'], DEFAULTS.writeMemory, warnings, 'writeMemory'),
     provider: text(source['provider'], DEFAULTS.provider, warnings, 'provider').trim(),
     model: text(source['model'], DEFAULTS.model, warnings, 'model').trim(),

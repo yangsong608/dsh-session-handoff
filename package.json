@@ -1,0 +1,66 @@
+{
+  "name": "dsh-session-handoff",
+  "version": "0.1.0",
+  "private": false,
+  "description": "DSH 会话接力：在提交按钮旁一键总结当前会话、固化记忆、生成交接文档，并把摘要与参考文件带进新会话继续工作",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "docs"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "session",
+    "handoff",
+    "handoff-summary",
+    "new-session",
+    "memory"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.0-rc.1 <0.3.0-0",
+    "node": ">=22.19.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.2.1-rc.2": "compatible"
+      }
+    }
+  },
+  "scripts": {
+    "bundle": "pnpm run bundle:host && pnpm run bundle:client",
+    "bundle:host": "tsdown -c src/host/tsdown.config.ts",
+    "bundle:client": "tsdown -c src/client/tsdown.config.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "verify": "node scripts/verify-bundle.mjs",
+    "check": "pnpm run bundle && pnpm run verify"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/react": "~18.3.31",
+    "tsdown": "^0.22.14",
+    "typescript": "^6.0.3"
+  }
+}

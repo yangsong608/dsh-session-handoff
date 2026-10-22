@@ -1,0 +1,7 @@
+node_modules/
+.DS_Store
+*.log
+coverage/
+dist/
+.tmp/
+# 构建产物按仓库惯例提交（lib/），因此不忽略

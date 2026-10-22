@@ -1,0 +1,9 @@
+# Bundle patch layer: this row loads the package main entry as the host half
+# (a plain Cordis plugin), while `dsh.client` in package.json makes the web
+# client load ./client as the browser half.
+#
+# Optional per-profile overrides live under `config:`; every field is optional
+# and validated in src/host/config.ts (the plugin has zero runtime dependencies).
+- insert:
+    - id: session-handoff
+      name: dsh-session-handoff

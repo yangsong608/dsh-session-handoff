@@ -80,7 +80,12 @@ function makeCtx({ failSeats = [], locale = undefined, shortcuts = true } = {}) 
   const registrations = []
   const injectedSeats = []
   const shortcut = { command: undefined }
-  const ctx = {
+  // 模拟 cordis 严格代理：services（可选能力）只能通过 ctx.get 取，直读会抛 injected 错误。
+  const services = {
+    locale,
+    shortcuts: shortcuts ? { register(command) { shortcut.command = command; return () => {} } } : undefined,
+  }
+  const base = {
     slots: {
       inject(key, callback) {
         if (failSeats.includes(key)) throw new Error(`seat ${key} unavailable`)
@@ -94,11 +99,16 @@ function makeCtx({ failSeats = [], locale = undefined, shortcuts = true } = {}) 
       entries: () => [],
     },
     effect: callback => callback(),
-    get: name => name === 'locale' ? locale : undefined,
-    ...(shortcuts
-      ? { shortcuts: { register(command) { shortcut.command = command; return () => {} } } }
-      : {}),
+    get(name) { return services[name] },
   }
+  const ctx = new Proxy(base, {
+    get(target, prop) {
+      if (prop in target) return target[prop]
+      if (typeof prop === 'string' && prop in services) throw new Error(`cannot get property "${prop}" without inject`)
+      return undefined
+    },
+    set(target, prop, value) { target[prop] = value; return true },
+  })
   return { ctx, registrations, injectedSeats, shortcut }
 }
 
@@ -168,6 +178,7 @@ check('快捷键默认 Cmd/Ctrl+Shift+H', shortcut.command?.defaults?.['desktop:
   && shortcut.command?.defaults?.['desktop:macos']?.modifiers?.includes('shift'))
 check('Linux 档避开 DSH 保留键', shortcut.command?.defaults?.['desktop:linux']?.code === 'Period' && shortcut.command?.defaults?.['web:linux']?.code === 'Period')
 check('六档默认键位全部声明', Object.keys(shortcut.command?.defaults ?? {}).length === 6)
+check('未注入服务直读会抛错（模拟 cordis 严格代理）', (() => { try { void ctx.shortcuts; return false } catch { return true } })())
 check('座位注入顺序：预览先于按钮', injectedSeats[0] === 'shell.overlay' && injectedSeats.includes('conversation.input.right'))
 check('注入了样式', env.state.styles.length === 1 && env.state.styles[0].id === 'dsh-session-handoff-style')
 check('注入面提供 run', typeof face?.run === 'function')

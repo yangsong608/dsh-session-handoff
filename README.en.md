@@ -81,13 +81,13 @@ pnpm install
 pnpm run bundle
 pnpm run typecheck
 pnpm run verify             # 31 artifact-contract checks
-node scripts/smoke.mjs      # 41 host-side end-to-end checks with a fake ctx
-node scripts/smoke-client.mjs # 33 client-bundle checks (real bundle + real React SSR)
+node scripts/smoke.mjs      # 44 host-side end-to-end checks (fake ctx + strict proxy)
+node scripts/smoke-client.mjs # 34 client-bundle checks (real bundle + real React SSR)
 node scripts/smoke-parity.mjs # 5 prompt-parity checks (server promptText ≡ client composePrompt)
 pnpm run check              # everything above
 ```
 
-Baseline: DSH `0.2.1-rc.2`, node 24 — `tsc` clean, `verify` 31/31, host `smoke` 41/41, client `smoke:client` 33/33, `parity` 5/5.
+Baseline: DSH `0.2.1-rc.2`, node 24 — `tsc` clean, `verify` 31/31, host `smoke` 44/44, client `smoke:client` 34/34, `parity` 5/5.
 
 ## Docs
 

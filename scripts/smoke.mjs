@@ -93,7 +93,7 @@ async function call(path, request) {
   return { status: response.status, json: JSON.parse(response.body || '{}') }
 }
 
-check('暴露版本号', VERSION === '0.2.1', VERSION)
+check('暴露版本号', VERSION === '0.2.2', VERSION)
 check('注册 health 路由', routes.has('/session-handoff/health'))
 check('注册 prepare 路由', routes.has('/session-handoff/prepare'))
 
@@ -234,6 +234,47 @@ check('记忆写入失败仍返回成功', memoryFailed.ok === true, memoryFaile
 check('记忆失败标记为降级', (memoryFailed.degraded ?? []).some(item => String(item).includes('memory-write-failed')), JSON.stringify(memoryFailed.degraded))
 check('降级后交接文档仍落盘', typeof memoryFailed.docPath === 'string' && (await stat(memoryFailed.docPath)).isFile())
 await rm(cwd3, { recursive: true, force: true })
+
+// 严格代理：模拟 cordis 插件作用域——未 inject 的服务直读必须抛错。
+// 这是本次 "Handoff failed: cannot get property \"llm\" without inject" 的回归测试。
+{
+  const strictCwd = await mkdtemp(join(tmpdir(), 'dsh-handoff-strict-'))
+  const services = {
+    sessionQuery: {
+      async readSession(id) {
+        return { session: { id, title: '严格代理', cwd: strictCwd }, events: [] }
+      },
+    },
+    llm: undefined,
+    sessions: undefined,
+  }
+  const routes6 = new Map()
+  const base = {
+    webServer: { register(route) { routes6.set(route.path, route.handler); return () => {} } },
+    logger: { info() {}, warn() {} },
+    effect: callback => callback(),
+    get(name) { return services[name] },
+  }
+  const strictCtx = new Proxy(base, {
+    get(target, prop) {
+      if (prop in target) return target[prop]
+      if (typeof prop === 'string' && prop in services) throw new Error(`cannot get property "${prop}" without inject`)
+      return undefined
+    },
+  })
+  let directThrew = false
+  try { void strictCtx.llm } catch { directThrew = true }
+  check('严格代理会拦截未注入服务直读', directThrew)
+  apply(strictCtx, { dir: '.dsh-handoff', writeMemory: false })
+  const res6 = makeRes()
+  routes6.get('/session-handoff/prepare')(makeReq({ headers: { 'x-dsh-handoff': '1' }, body: JSON.stringify({ sessionId: 'session-strict' }) }), res6)
+  const deadline6 = Date.now() + 10_000
+  while (res6.body === '' && Date.now() < deadline6) await new Promise(resolve => setTimeout(resolve, 10))
+  const strictResult = JSON.parse(res6.body)
+  check('严格代理下 prepare 不因 llm 直读失败', strictResult.ok === true, strictResult.message)
+  check('严格代理下走确定性降级', strictResult.stats?.llm === false)
+  await rm(strictCwd, { recursive: true, force: true })
+}
 
 await rm(cwd, { recursive: true, force: true })
 

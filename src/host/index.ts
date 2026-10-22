@@ -26,7 +26,7 @@ import type {
 } from './types.ts'
 
 /** 版本号：与 package.json 保持一致（宿主半不 import JSON，避免 loader 差异）。 */
-export const VERSION = '0.2.1'
+export const VERSION = '0.2.2'
 
 const PREFIX = '[dsh-session-handoff]'
 const ROUTE_HEALTH = '/session-handoff/health'
@@ -96,11 +96,20 @@ function log(ctx: HostContextLike, level: 'info' | 'warn', message: string): voi
 }
 
 function service<T>(ctx: HostContextLike, name: 'sessionQuery' | 'llm' | 'sessions'): T | undefined {
-  const direct = (ctx as unknown as Record<string, unknown>)[name]
-  if (direct !== undefined) return direct as T
+  // 注意顺序：cordis 4 的插件作用域上下文是严格代理，读取未写进 inject 的服务名会直接抛
+  // `cannot get property "<name>" without inject`，所以必须先走软查询。
+  // ctx.get(name, false) 的契约就是「跳过 inject 要求」（见 cordis Context#get），
+  // 未提供时返回 undefined，正好对应本插件的可选能力语义。
   if (typeof ctx.get === 'function') {
     const resolved = ctx.get(name, false)
-    return resolved === undefined || resolved === null ? undefined : resolved as T
+    if (resolved !== undefined && resolved !== null) return resolved as T
+  }
+  // 兜底：非 cordis 上下文（例如冒烟脚本里的普通对象）没有 get，只能直接读属性。
+  try {
+    const direct = (ctx as unknown as Record<string, unknown>)[name]
+    if (direct !== undefined) return direct as T
+  } catch {
+    // 命中 inject 保护：该服务对本插件不可用，按降级处理而不是让 apply 抛错。
   }
   return undefined
 }
@@ -232,9 +241,13 @@ async function prepare(
   const timeout = Math.min(MAX_TIMEOUT_MS, Math.max(1_000, config.timeoutMs))
   const controller = new AbortController()
   const timer = setTimeout(() => { controller.abort(new Error(`摘要超时（${timeout}ms）`)) }, timeout)
+  // 关键：llm 是可选服务，必须先通过软查询解析成普通对象再传下去。
+  // 直接把 ctx 传给协作者会在 cordis 严格代理上触发
+  // `cannot get property "llm" without inject`（插件未声明 inject: ['llm']）。
+  const llm = service<LlmRuntimeLike>(ctx, 'llm')
   let outcome
   try {
-    outcome = await summarize(ctx as { llm?: LlmRuntimeLike }, facts, config, controller.signal)
+    outcome = await summarize({ llm }, facts, config, controller.signal)
   } finally {
     clearTimeout(timer)
   }

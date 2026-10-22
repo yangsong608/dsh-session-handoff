@@ -226,7 +226,7 @@ async function readCompletion(stream: AsyncIterable<LlmStreamChunk>): Promise<st
 
 /** 调用一次模型做归纳；失败时不抛出，交给调用方降级。 */
 export async function summarize(
-  ctx: { llm?: LlmRuntimeLike },
+  runtime: { llm?: LlmRuntimeLike },
   facts: Facts,
   config: HandoffConfig,
   signal: AbortSignal,
@@ -235,7 +235,7 @@ export async function summarize(
   const route = config.provider !== '' && config.model !== ''
     ? { provider: config.provider, model: config.model }
     : facts.lastRoute
-  if (ctx.llm === undefined) {
+  if (runtime.llm === undefined) {
     degraded.push('llm-unavailable')
     return { data: fallbackData(facts), llm: false, degraded }
   }
@@ -245,7 +245,7 @@ export async function summarize(
   }
   const digest = buildDigest(facts, config.maxInputChars)
   try {
-    const stream = ctx.llm.stream({
+    const stream = runtime.llm.stream({
       provider: route.provider,
       model: route.model,
       system: SYSTEM_PROMPT,

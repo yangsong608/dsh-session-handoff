@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-handoff",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": false,
   "description": "DSH 会话接力：提交按钮旁一键总结会话、固化记忆、生成交接文档；可编辑预览后在新会话继续",
   "type": "module",

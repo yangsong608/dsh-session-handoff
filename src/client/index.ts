@@ -83,9 +83,18 @@ function language(): 'zh' | 'en' {
 }
 
 function softGet(ctx: ClientContextLike, name: string): unknown {
-  if (typeof ctx.get !== 'function') return undefined
+  if (typeof ctx.get === 'function') {
+    try {
+      const resolved = ctx.get(name, false)
+      if (resolved !== undefined && resolved !== null) return resolved
+    } catch {
+      // 落在下面的直读兜底
+    }
+  }
+  // 兜底：普通对象 ctx（冒烟脚本、旧版宿主）没有严格代理，可直接读属性。
+  // 在 cordis 4 的插件作用域里这一句会抛 `cannot get property "..." without inject`，被 catch 吞掉。
   try {
-    return ctx.get(name, false)
+    return (ctx as unknown as Record<string, unknown>)[name]
   } catch {
     return undefined
   }
@@ -283,7 +292,10 @@ function registerPreview(ctx: ClientContextLike): boolean {
 
 /** 注册快捷键：Cmd/Ctrl+Shift+H。 */
 function registerShortcut(ctx: ClientContextLike): boolean {
-  if (ctx.shortcuts === undefined || typeof ctx.shortcuts.register !== 'function' || typeof ctx.effect !== 'function') return false
+  // shortcuts 是可选能力，必须在 inject 之外软读取：cordis 4 的插件作用域是严格代理，
+  // 直读未声明 inject 的服务名会抛 `cannot get property "shortcuts" without inject`。
+  const shortcuts = softGet(ctx, 'shortcuts') as ShortcutsFace | undefined
+  if (shortcuts === undefined || typeof shortcuts.register !== 'function' || typeof ctx.effect !== 'function') return false
   const modifiers = ['primary', 'shift'] as const
   const command = {
     id: 'session.handoff',
@@ -315,7 +327,7 @@ function registerShortcut(ctx: ClientContextLike): boolean {
     },
   }
   try {
-    ctx.effect(() => (ctx.shortcuts as ShortcutsFace).register(command), 'dsh-session-handoff: shortcut')
+    ctx.effect(() => shortcuts.register(command), 'dsh-session-handoff: shortcut')
     return true
   } catch (cause) {
     console.warn(`[dsh-session-handoff] 快捷键注册失败：${errorMessage(cause)}`)

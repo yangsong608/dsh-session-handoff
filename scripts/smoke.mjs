@@ -5,7 +5,7 @@
  *
  * 不启动 DSH、不安装插件、不联网：验证的是插件自己的契约与降级路径。
  */
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -93,7 +93,7 @@ async function call(path, request) {
   return { status: response.status, json: JSON.parse(response.body || '{}') }
 }
 
-check('暴露版本号', VERSION === '0.2.0', VERSION)
+check('暴露版本号', VERSION === '0.2.1', VERSION)
 check('注册 health 路由', routes.has('/session-handoff/health'))
 check('注册 prepare 路由', routes.has('/session-handoff/prepare'))
 
@@ -213,6 +213,27 @@ const outside = await stat(join(cwd2, '..', 'escape.md')).then(() => true).catch
 check('越界 memoryFile 不回退到工作区外', escaped.ok === true && outside === false, `outside=${outside}`)
 check('越界 memoryFile 回退为默认台账', await stat(join(cwd2, '.dsh-handoff', '交接记忆.md')).then(() => true).catch(() => false))
 await rm(cwd2, { recursive: true, force: true })
+
+// 记忆台账写入失败：交接文档仍要成功产出（降级而不是整单失败）。
+const cwd3 = await mkdtemp(join(tmpdir(), 'dsh-handoff-smoke3-'))
+const routes5 = new Map()
+const ctx5 = {
+  ...ctx,
+  webServer: { register(route) { routes5.set(route.path, route.handler); return () => routes5.delete(route.path) } },
+  sessionQuery: { async readSession(id) { return { session: { id, title: '记忆失败测试', cwd: cwd3 }, events: [] } } },
+}
+apply(ctx5, { provider: 'deepseek', model: 'deepseek-chat', memoryFile: 'blocked.md', dir: '.dsh-handoff' })
+// 用一个同名目录占位，让台账写入抛 EISDIR。
+await mkdir(join(cwd3, '.dsh-handoff', 'blocked.md'), { recursive: true })
+const res5 = makeRes()
+routes5.get('/session-handoff/prepare')(makeReq({ headers: { 'x-dsh-handoff': '1' }, body: JSON.stringify({ sessionId: 'session-smoke' }) }), res5)
+const deadline5 = Date.now() + 10_000
+while (res5.body === '' && Date.now() < deadline5) await new Promise(resolve => setTimeout(resolve, 10))
+const memoryFailed = JSON.parse(res5.body)
+check('记忆写入失败仍返回成功', memoryFailed.ok === true, memoryFailed.message)
+check('记忆失败标记为降级', (memoryFailed.degraded ?? []).some(item => String(item).includes('memory-write-failed')), JSON.stringify(memoryFailed.degraded))
+check('降级后交接文档仍落盘', typeof memoryFailed.docPath === 'string' && (await stat(memoryFailed.docPath)).isFile())
+await rm(cwd3, { recursive: true, force: true })
 
 await rm(cwd, { recursive: true, force: true })
 

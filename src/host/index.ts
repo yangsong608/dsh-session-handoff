@@ -26,7 +26,7 @@ import type {
 } from './types.ts'
 
 /** 版本号：与 package.json 保持一致（宿主半不 import JSON，避免 loader 差异）。 */
-export const VERSION = '0.2.0'
+export const VERSION = '0.2.1'
 
 const PREFIX = '[dsh-session-handoff]'
 const ROUTE_HEALTH = '/session-handoff/health'
@@ -240,13 +240,33 @@ async function prepare(
   }
   const data: HandoffData = outcome.data
   if (normalizeTitle(facts.title) !== '' && normalizeTitle(data.title) === '') data.title = facts.title
+  const root = resolveInside(facts.cwd, config.dir)
+  // 记忆台账是增强项：写失败只降级记录，不能让已经可用的交接文档整单失败。
+  let memoryPath: string | undefined
+  if (config.writeMemory && data.memoryCandidates.length > 0) {
+    const memoryFile = join(root, config.memoryFile)
+    try {
+      const existing = await exists(memoryFile)
+      const { block, added } = memoryDelta(existing ? await readFile(memoryFile, 'utf8') : '', data, facts)
+      if (added > 0) {
+        await appendWithRoll(memoryFile, MEMORY_HEADER, block, MEMORY_LIMIT_BYTES)
+        memoryPath = memoryFile
+        log(ctx, 'info', `记忆台账追加 ${added} 条 → ${memoryFile}`)
+      } else if (existing) {
+        memoryPath = memoryFile
+      }
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      facts.degraded.push(`memory-write-failed:${detail}`.slice(0, 300))
+      log(ctx, 'warn', `记忆台账写入失败，已降级：${detail}`)
+    }
+  }
+
   const meta = {
     ...(outcome.model === undefined ? {} : { model: outcome.model }),
     llm: outcome.llm,
     degraded: [...facts.degraded, ...outcome.degraded],
   }
-
-  const root = resolveInside(facts.cwd, config.dir)
   const runDir = await createRunDir(root, `${stamp(facts.capturedAt)}-${slug(data.title)}`)
   const docPath = join(runDir, 'WorkSummary.md')
   const dataPath = join(runDir, 'handoff.json')
@@ -254,20 +274,6 @@ async function prepare(
   const json = renderJson(facts, data, meta)
   await writeAtomic(docPath, markdown)
   await writeAtomic(dataPath, json)
-
-  let memoryPath: string | undefined
-  if (config.writeMemory && data.memoryCandidates.length > 0) {
-    const memoryFile = join(root, config.memoryFile)
-    const existing = await exists(memoryFile)
-    const { block, added } = memoryDelta(existing ? await readFile(memoryFile, 'utf8') : '', data, facts)
-    if (added > 0) {
-      await appendWithRoll(memoryFile, MEMORY_HEADER, block, MEMORY_LIMIT_BYTES)
-      memoryPath = memoryFile
-      log(ctx, 'info', `记忆台账追加 ${added} 条 → ${memoryFile}`)
-    } else if (existing) {
-      memoryPath = memoryFile
-    }
-  }
 
   const paths = { doc: docPath, json: dataPath }
   const promptParts = buildPromptParts(facts, data, paths)

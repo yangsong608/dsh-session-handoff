@@ -202,7 +202,10 @@ function HandoffButton({ sessionId, t, run, useWorkspaces, useSession }: Handoff
       try {
         const result = await run(sessionId, hint)
         latch.succeed()
-        if (result.mode === 'preview') toast(text('toast.preview'))
+        if (result.mode === 'preview') {
+          const current = previewStore.getState()
+          toast(`${text('toast.preview')}${current.phase === 'ready' ? `：${current.payload.title}` : ''}`)
+        }
         else if (result.mode === 'sent') toast(text('toast.sent'))
         else toast(text('toast.draft'))
       } catch (cause) {
@@ -287,12 +290,14 @@ function registerShortcut(ctx: ClientContextLike): boolean {
     label: () => (language() === 'zh' ? ZH['shortcut.label'] : EN['shortcut.label']),
     aliases: ['handoff', 'session handoff', '会话接力', '新会话接力'],
     defaults: {
+      // DSH 的键位校验把 primary+KeyH 视为保留组合（桌面 Linux 与全部 Web Linux），
+      // 因此 Linux 档改用 primary+shift+Period；其余平台保持 Cmd/Ctrl+Shift+H。
       'desktop:macos': { code: 'KeyH', modifiers },
       'desktop:windows': { code: 'KeyH', modifiers },
-      'desktop:linux': { code: 'KeyH', modifiers },
+      'desktop:linux': { code: 'Period', modifiers },
       'web:macos': { code: 'KeyH', modifiers },
       'web:windows': { code: 'KeyH', modifiers },
-      'web:linux': { code: 'KeyH', modifiers },
+      'web:linux': { code: 'Period', modifiers },
     },
     regions: ['page', 'editable'],
     modals: [],

@@ -55,6 +55,7 @@ const ZH: Record<string, string> = {
   'preview.sent': '已发送到新会话：',
   'preview.draft': '已在新会话预填提示词：',
   'preview.failed': '打开新会话失败：',
+  'preview.regenFailed': '重新生成失败：',
 }
 
 const EN: Record<string, string> = {
@@ -80,6 +81,7 @@ const EN: Record<string, string> = {
   'preview.sent': 'Sent to the new session: ',
   'preview.draft': 'Prefilled the new session: ',
   'preview.failed': 'Failed to open a new session: ',
+  'preview.regenFailed': 'Regeneration failed: ',
 }
 
 function language(): 'zh' | 'en' {
@@ -159,7 +161,7 @@ export function PreviewCard({ t, open, regenerate, copy, close }: PreviewCardPro
     try {
       await regenerate()
     } catch (cause) {
-      setError(`${text('preview.failed')}${cause instanceof Error ? cause.message : String(cause)}`)
+      setError(`${text('preview.regenFailed')}${cause instanceof Error ? cause.message : String(cause)}`)
     } finally {
       setBusy(null)
     }
@@ -209,6 +211,8 @@ export function PreviewCard({ t, open, regenerate, copy, close }: PreviewCardPro
         className: CLS.prompt,
         value: prompt,
         spellCheck: false,
+        autoFocus: true,
+        'aria-label': text('preview.prompt'),
         onChange: (event: { target: { value: string } }) => { setPrompt(event.target.value); setEdited(true) },
       })),
     h('div', { key: 'refs' },

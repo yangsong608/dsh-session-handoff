@@ -166,6 +166,8 @@ check('注册快捷键 session.handoff', shortcut.command?.id === 'session.hando
 check('快捷键默认 Cmd/Ctrl+Shift+H', shortcut.command?.defaults?.['desktop:macos']?.code === 'KeyH'
   && shortcut.command?.defaults?.['desktop:macos']?.modifiers?.includes('primary')
   && shortcut.command?.defaults?.['desktop:macos']?.modifiers?.includes('shift'))
+check('Linux 档避开 DSH 保留键', shortcut.command?.defaults?.['desktop:linux']?.code === 'Period' && shortcut.command?.defaults?.['web:linux']?.code === 'Period')
+check('六档默认键位全部声明', Object.keys(shortcut.command?.defaults ?? {}).length === 6)
 check('座位注入顺序：预览先于按钮', injectedSeats[0] === 'shell.overlay' && injectedSeats.includes('conversation.input.right'))
 check('注入了样式', env.state.styles.length === 1 && env.state.styles[0].id === 'dsh-session-handoff-style')
 check('注入面提供 run', typeof face?.run === 'function')

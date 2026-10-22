@@ -19,7 +19,7 @@
 - **不删原会话、不 fork 历史**：新会话是干净的，只携带「结论 + 文档指针」，token 成本可控。
 - **失败也能用**：模型不可用/超时/输出不合法时自动降级为确定性摘要，文档照样生成。
 - **可审阅**：生成后先弹预览卡，提示词可编辑、参考文件可勾选，确认才开新会话；也可关掉预览直接预填草稿。
-- **三个入口**：按钮、`Cmd/Ctrl+Shift+H`、预览卡里的「打开新会话」。
+- **三个入口**：按钮、`Cmd/Ctrl+Shift+H`（Linux 为 `Cmd/Ctrl+Shift+.`，因 DSH 把 `primary+KeyH` 视为保留键）、预览卡里的「打开新会话」。
 - **零运行时依赖**：宿主半只用 node 内置模块，浏览器半只从宿主的 React 基线取模块。
 
 ## 体验路径
@@ -112,13 +112,13 @@ pnpm install
 pnpm run bundle             # lib/index.js（host） + lib/client.js（浏览器模块工厂）
 pnpm run typecheck          # tsc --noEmit
 pnpm run verify             # 31 项产物契约自检
-node scripts/smoke.mjs      # 38 项宿主半端到端冒烟（假 ctx + 临时目录，不启动 DSH）
-node scripts/smoke-client.mjs # 31 项浏览器半冒烟（真实 bundle + 真 React SSR）
+node scripts/smoke.mjs      # 41 项宿主半端到端冒烟（假 ctx + 临时目录，不启动 DSH）
+node scripts/smoke-client.mjs # 33 项浏览器半冒烟（真实 bundle + 真 React SSR）
 node scripts/smoke-parity.mjs # 5 项提示词一致性（服务端 promptText ≡ 客户端 composePrompt）
 pnpm run check              # 全部跑一遍
 ```
 
-当前基线（DSH 0.2.1-rc.2 / node 24）：`tsc` 0 错误、`verify` 31/31、宿主 `smoke` 38/38、浏览器 `smoke:client` 31/31、`parity` 5/5。
+当前基线（DSH 0.2.1-rc.2 / node 24）：`tsc` 0 错误、`verify` 31/31、宿主 `smoke` 41/41、浏览器 `smoke:client` 33/33、`parity` 5/5。
 
 ## 兼容性
 

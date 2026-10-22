@@ -56,16 +56,20 @@ function createOptions(hint: SessionHint): Record<string, unknown> {
 async function sendToSession(sessions: SessionsFace, sessionId: string, text: string): Promise<void> {
   if (typeof sessions.retain !== 'function') throw new Error('缺少 sessions.retain')
   const ref = sessions.retain(sessionId, { source: 'handoff' })
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
     await Promise.race([
       Promise.resolve(ref.ready).catch(() => undefined),
-      new Promise((_, reject) => { setTimeout(() => reject(new Error('会话打开超时')), 10_000) }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('会话打开超时')), 10_000)
+      }),
     ])
     const session = ref.binding?.session
     if (session === undefined || typeof session.prompt !== 'function') throw new Error('会话不可用')
     const result = await session.prompt([{ type: 'text', text }], 'queue')
     if (result !== undefined && result.ok === false) throw new Error(result.error?.message ?? '发送失败')
   } finally {
+    if (timer !== undefined) clearTimeout(timer)
     ref.release?.()
   }
 }

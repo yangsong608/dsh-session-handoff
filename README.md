@@ -38,7 +38,7 @@ dsh plugin --profile desktop add dsh-session-handoff
 dsh plugin --profile desktop add link:/path/to/dsh-session-handoff
 ```
 
-桌面端装完通常无需重启（客户端 bundle 走 HMR）；若按钮未出现，刷新一次页面。
+从市场/插件页安装通常可热加载；用 CLI 安装后如按钮未出现，刷新页面，仍没有则重启一次 DSH。
 卸载：`dsh plugin --profile desktop remove dsh-session-handoff`。
 
 ## 配置（可选）
@@ -105,13 +105,15 @@ dsh plugin --profile desktop add link:/path/to/dsh-session-handoff
 
 ```bash
 pnpm install
-pnpm run bundle       # lib/index.js（host） + lib/client.js（浏览器模块工厂）
-pnpm run typecheck    # tsc --noEmit
-pnpm run verify       # 29 项产物契约自检
-node scripts/smoke.mjs # 35 项宿主半端到端冒烟（假 ctx + 临时目录，不启动 DSH）
+pnpm run bundle             # lib/index.js（host） + lib/client.js（浏览器模块工厂）
+pnpm run typecheck          # tsc --noEmit
+pnpm run verify             # 29 项产物契约自检
+node scripts/smoke.mjs      # 35 项宿主半端到端冒烟（假 ctx + 临时目录，不启动 DSH）
+node scripts/smoke-client.mjs # 22 项浏览器半冒烟（真实 bundle + 真 React SSR + 假 ctx）
+pnpm run check              # 全部跑一遍
 ```
 
-当前基线（DSH 0.2.1-rc.2 / node 24）：`tsc` 0 错误、`verify` 29/29、`smoke` 35/35。
+当前基线（DSH 0.2.1-rc.2 / node 24）：`tsc` 0 错误、`verify` 29/29、宿主 `smoke` 35/35、浏览器 `smoke:client` 22/22。
 
 ## 兼容性
 

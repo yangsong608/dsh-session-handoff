@@ -34,3 +34,6 @@ jobs:
 
       - name: Host smoke
         run: node scripts/smoke.mjs
+
+      - name: Client bundle smoke
+        run: node scripts/smoke-client.mjs

@@ -55,11 +55,15 @@
     "bundle:client": "tsdown -c src/client/tsdown.config.ts",
     "typecheck": "tsc -p tsconfig.json",
     "verify": "node scripts/verify-bundle.mjs",
-    "check": "pnpm run bundle && pnpm run verify"
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:client": "node scripts/smoke-client.mjs",
+    "check": "pnpm run bundle && pnpm run typecheck && pnpm run verify && pnpm run smoke && pnpm run smoke:client"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
     "@types/react": "~18.3.31",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "tsdown": "^0.22.14",
     "typescript": "^6.0.3"
   },

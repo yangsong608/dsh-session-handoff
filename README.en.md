@@ -78,11 +78,13 @@ Everything is optional. Add a `config:` block to the bundle patch row:
 pnpm install
 pnpm run bundle
 pnpm run typecheck
-pnpm run verify        # 29 artifact-contract checks
-node scripts/smoke.mjs # 35 host-side end-to-end checks with a fake ctx
+pnpm run verify             # 29 artifact-contract checks
+node scripts/smoke.mjs      # 35 host-side end-to-end checks with a fake ctx
+node scripts/smoke-client.mjs # 22 client-bundle checks (real bundle + real React SSR)
+pnpm run check             # everything above
 ```
 
-Baseline: DSH `0.2.1-rc.2`, node 24 — `tsc` clean, `verify` 29/29, `smoke` 35/35.
+Baseline: DSH `0.2.1-rc.2`, node 24 — `tsc` clean, `verify` 29/29, host `smoke` 35/35, client `smoke:client` 22/22.
 
 ## Docs
 

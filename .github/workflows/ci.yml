@@ -37,3 +37,6 @@ jobs:
 
       - name: Client bundle smoke
         run: node scripts/smoke-client.mjs
+
+      - name: Prompt parity
+        run: node scripts/smoke-parity.mjs

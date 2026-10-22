@@ -1,8 +1,8 @@
 {
   "name": "dsh-session-handoff",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
-  "description": "DSH 会话接力：在提交按钮旁一键总结当前会话、固化记忆、生成交接文档，并把摘要与参考文件带进新会话继续工作",
+  "description": "DSH 会话接力：提交按钮旁一键总结会话、固化记忆、生成交接文档；可编辑预览后在新会话继续",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -57,7 +57,8 @@
     "verify": "node scripts/verify-bundle.mjs",
     "smoke": "node scripts/smoke.mjs",
     "smoke:client": "node scripts/smoke-client.mjs",
-    "check": "pnpm run bundle && pnpm run typecheck && pnpm run verify && pnpm run smoke && pnpm run smoke:client"
+    "smoke:parity": "node scripts/smoke-parity.mjs",
+    "check": "pnpm run bundle && pnpm run typecheck && pnpm run verify && pnpm run smoke && pnpm run smoke:client && pnpm run smoke:parity"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

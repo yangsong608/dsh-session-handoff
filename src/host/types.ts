@@ -118,12 +118,33 @@ export interface HandoffData {
   memoryCandidates: { text: string; scope: 'memory' | 'user' | 'project' }[]
 }
 
+/** 新会话提示词的结构化分段（服务端与浏览器半共享同一形状）。 */
+export interface PromptParts {
+  title: string
+  sessionId: string
+  docPath: string
+  dataPath: string
+  summary: string
+  goal: string
+  completed: string[]
+  nextSteps: { step: string; why: string }[]
+  blockers: string[]
+  /** 默认勾选的参考文件。 */
+  references: string[]
+  /** 全部候选参考文件。 */
+  referenceOptions: string[]
+  requirements: string[]
+}
+
 /** 一次 prepare 的结果。 */
 export interface HandoffResult {
   ok: true
   sessionId: string
   title: string
   promptText: string
+  promptParts: PromptParts
+  /** 浏览器半是否先展示可编辑预览（false = v0.1 直接草稿/发送）。 */
+  preview: boolean
   markdown: string
   data: HandoffData
   docPath: string

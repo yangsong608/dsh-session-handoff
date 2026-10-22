@@ -93,7 +93,7 @@ async function call(path, request) {
   return { status: response.status, json: JSON.parse(response.body || '{}') }
 }
 
-check('暴露版本号', VERSION === '0.1.0', VERSION)
+check('暴露版本号', VERSION === '0.2.0', VERSION)
 check('注册 health 路由', routes.has('/session-handoff/health'))
 check('注册 prepare 路由', routes.has('/session-handoff/prepare'))
 
@@ -119,6 +119,10 @@ check('prepare 成功', prepared.status === 200 && prepared.json.ok === true, `s
 const result = prepared.json
 if (result.ok !== true) { console.error('prepare 失败：', result); process.exit(1) }
 check('摘要走模型而非兜底', result.stats?.llm === true)
+check('返回结构化提示词分段', result.promptParts?.title === '建立会话接力插件' && Array.isArray(result.promptParts.referenceOptions))
+check('默认开启可编辑预览', result.preview === true)
+check('提示词由分段组装且含文档与下一步', result.promptText.includes(result.docPath) && result.promptText.includes('推送 GitHub 仓库'))
+
 check('标题来自模型', result.title === '建立会话接力插件')
 check('提示词包含交接文档绝对路径', typeof result.promptText === 'string' && result.promptText.includes(result.docPath))
 check('提示词包含下一步', (result.promptText ?? '').includes('推送 GitHub 仓库'))

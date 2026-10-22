@@ -2,7 +2,7 @@
 
 [English](./README.en.md) | 简体中文
 
-> 在 DSH 输入框的提交按钮旁多一个按钮：一键把当前会话「总结 → 固化记忆 → 写成交接文档 → 带进新会话继续干」。
+> 在 DSH 输入框的提交按钮旁多一个按钮：一键把当前会话「总结 → 固化记忆 → 写成交接文档 → 预览确认 → 带进新会话继续干」。
 
 [![dsh-plugin](https://img.shields.io/badge/dsh-plugin-blue)](https://github.com/deepseek-ai/deepseek-harness)
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
@@ -14,19 +14,22 @@
 
 本插件把这一步做成一次点击：读取当前会话日志 → 确定性提取事实 → 让模型归纳成五段式交接 →
 在会话工作目录写一份 `WorkSummary.md`（+ 机器可读 `handoff.json` + 记忆台账）→
-打开一个新会话，把摘要、交接文档路径与参考文件预填成第一句提示词。
+弹出可编辑预览（提示词可改、参考文件可勾选）→ 确认后打开一个新会话，把摘要、交接文档路径与参考文件预填成第一句提示词。
 
 - **不删原会话、不 fork 历史**：新会话是干净的，只携带「结论 + 文档指针」，token 成本可控。
 - **失败也能用**：模型不可用/超时/输出不合法时自动降级为确定性摘要，文档照样生成。
-- **可审阅**：默认只预填草稿，你在发送前能改；想全自动可开 `autoSend`。
+- **可审阅**：生成后先弹预览卡，提示词可编辑、参考文件可勾选，确认才开新会话；也可关掉预览直接预填草稿。
+- **三个入口**：按钮、`Cmd/Ctrl+Shift+H`、预览卡里的「打开新会话」。
 - **零运行时依赖**：宿主半只用 node 内置模块，浏览器半只从宿主的 React 基线取模块。
 
 ## 体验路径
 
-1. 在任意会话里，输入框右侧、发送按钮附近会出现「接力」图标按钮。
-2. 点一下 → 按钮转圈（整理中）→ 成功后自动切到一个**同一工作区的新会话**，输入框里已经填好交接提示词。
-3. 新会话的第一件事：读交接文档（绝对路径已写进提示词），然后从「下一步」第一项继续。
-4. 交接文档留在 ` <工作目录>/.dsh-handoff/<时间戳>-<标题>/WorkSummary.md`，可归档、可交接给同事、可进 Git。
+1. 在任意会话里，输入框右侧、发送按钮附近会出现「接力」图标按钮；也可以按 `Cmd/Ctrl+Shift+H`。
+2. 点一下 → 按钮转圈（整理中）→ 弹出**交接预览卡**：一句话状态、下一步、记忆候选、文档路径、可编辑提示词、参考文件勾选。
+3. 改完点「打开新会话」→ 切到**同一工作区的新会话**，输入框里已经填好（可能被你改过的）交接提示词。
+4. 新会话的第一件事：读交接文档（绝对路径已写进提示词），然后从「下一步」第一项继续。
+5. 交接文档留在 `<工作目录>/.dsh-handoff/<时间戳>-<标题>/WorkSummary.md`，可归档、可交接给同事、可进 Git。
+   预览卡还能「复制提示词 / 重新生成 / 复制文档路径」；`preview: false` 时退回 v0.1 的一键直达。
 
 ## 安装
 
@@ -52,7 +55,8 @@ dsh plugin --profile desktop add link:/path/to/dsh-session-handoff
       config:
         dir: .dsh-handoff          # 交接文档目录（相对会话 cwd）
         writeMemory: true          # 写/合并记忆台账
-        autoSend: false            # true = 直接发送到新会话；false = 预填草稿
+        preview: true              # true = 先弹可编辑预览；false = 直接开新会话（v0.1 行为）
+        autoSend: false            # 预览关闭时：true = 直接发送；false = 预填草稿
         provider: ''               # 为空则沿用会话最后一次请求的路由
         model: ''
         maxTokens: 4096
@@ -107,13 +111,14 @@ dsh plugin --profile desktop add link:/path/to/dsh-session-handoff
 pnpm install
 pnpm run bundle             # lib/index.js（host） + lib/client.js（浏览器模块工厂）
 pnpm run typecheck          # tsc --noEmit
-pnpm run verify             # 29 项产物契约自检
-node scripts/smoke.mjs      # 35 项宿主半端到端冒烟（假 ctx + 临时目录，不启动 DSH）
-node scripts/smoke-client.mjs # 22 项浏览器半冒烟（真实 bundle + 真 React SSR + 假 ctx）
+pnpm run verify             # 31 项产物契约自检
+node scripts/smoke.mjs      # 38 项宿主半端到端冒烟（假 ctx + 临时目录，不启动 DSH）
+node scripts/smoke-client.mjs # 31 项浏览器半冒烟（真实 bundle + 真 React SSR）
+node scripts/smoke-parity.mjs # 5 项提示词一致性（服务端 promptText ≡ 客户端 composePrompt）
 pnpm run check              # 全部跑一遍
 ```
 
-当前基线（DSH 0.2.1-rc.2 / node 24）：`tsc` 0 错误、`verify` 29/29、宿主 `smoke` 35/35、浏览器 `smoke:client` 22/22。
+当前基线（DSH 0.2.1-rc.2 / node 24）：`tsc` 0 错误、`verify` 31/31、宿主 `smoke` 38/38、浏览器 `smoke:client` 31/31、`parity` 5/5。
 
 ## 兼容性
 
@@ -137,6 +142,7 @@ pnpm run check              # 全部跑一遍
 ## 已知限制
 
 - 交接质量受源会话日志完整度影响；极端长会话会在输入预算处按「保头保尾」截断。
+- 预览卡默认开启；如更想一键直达，配 `preview: false`。参考文件勾选在手动编辑提示词后锁定（需重新生成才能改）。
 - 记忆台账目前是本插件自有格式（Markdown），与 `dsh-mnemon` 等记忆插件的自动同步在 v0.2。
 - `autoSend` 依赖半公开的 `sessions.retain/prompt`，DSH 内部改动时可能失效（自动回退草稿）。
 - 不做跨机器/跨用户传输：交接文档要不要进 Git、要不要发给别人，由用户决定。

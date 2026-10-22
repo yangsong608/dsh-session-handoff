@@ -6,7 +6,7 @@
  * @module dsh-session-handoff/host/render
  */
 
-import type { Facts, HandoffData } from './types.ts'
+import type { Facts, HandoffData, PromptParts } from './types.ts'
 
 function iso(time: number): string {
   return new Date(time).toISOString()
@@ -147,71 +147,103 @@ export function renderJson(
 }
 
 /** 新会话提示词：内联摘要（受预算约束）+ 交接文档绝对路径 + 参考文件。 */
-export function buildPromptText(
+/** 交接要求：固定四条，客户端与服务端必须一致。 */
+export const HANDOFF_REQUIREMENTS: readonly string[] = [
+  '先用 Read 打开交接文档，确认当前状态，不要凭上面的摘要猜测细节。',
+  '从「下一步」第一项开始执行；如果发现状态与文档不一致，先说明差异再调整计划。',
+  '需要修改的文件优先在「参考文件」里找；新发现的重要文件补进交接文档。',
+  '完成后在回复里说明：本次目标、实际改动、验证方式。',
+]
+
+/** 把事实集与归纳结果展开成提示词分段。 */
+export function buildPromptParts(
   facts: Facts,
   data: HandoffData,
   paths: { doc: string; json: string },
-  budget: number,
-): string {
+): PromptParts {
+  const options = (data.state.files.length > 0 ? data.state.files : facts.files).slice(0, 40)
+  return {
+    title: data.title,
+    sessionId: facts.sessionId,
+    docPath: paths.doc,
+    dataPath: paths.json,
+    summary: data.summary !== '' ? oneLine(data.summary) : '（见交接文档）',
+    goal: data.goal !== '' ? data.goal : '（见交接文档）',
+    completed: [...data.completed],
+    nextSteps: data.nextSteps.map(step => ({ step: oneLine(step.step), why: oneLine(step.why) })),
+    blockers: [...data.state.blockers],
+    references: options.slice(0, 12),
+    referenceOptions: options,
+    requirements: [...HANDOFF_REQUIREMENTS],
+  }
+}
+
+/** 由提示词分段组装最终文本；references 由调用方决定（预览里可勾选）。 */
+export function composePrompt(parts: PromptParts, references: readonly string[] = parts.references): string {
   const lines: string[] = []
-  lines.push(`# 会话接力：${data.title}`)
+  lines.push(`# 会话接力：${parts.title}`)
   lines.push('')
-  lines.push(`上一会话（\`${facts.sessionId}\`）已完成一轮工作，下面是它的交接材料。`)
+  lines.push(`上一会话（\`${parts.sessionId}\`）已完成一轮工作，下面是它的交接材料。`)
   lines.push('')
   lines.push('## 先读这两份文件')
-  lines.push(`- 交接文档（必读）：\`${paths.doc}\``)
-  lines.push(`- 结构化数据：\`${paths.json}\``)
+  lines.push(`- 交接文档（必读）：\`${parts.docPath}\``)
+  lines.push(`- 结构化数据：\`${parts.dataPath}\``)
   lines.push('')
   lines.push('## 一句话状态')
-  lines.push(data.summary !== '' ? oneLine(data.summary) : '（见交接文档）')
+  lines.push(parts.summary)
   lines.push('')
   lines.push('## 目标')
-  lines.push(data.goal !== '' ? data.goal : '（见交接文档）')
+  lines.push(parts.goal)
   lines.push('')
-  if (data.completed.length > 0) {
+  if (parts.completed.length > 0) {
     lines.push('## 已完成')
-    for (const item of data.completed) lines.push(`- ${item}`)
+    for (const item of parts.completed) lines.push(`- ${item}`)
     lines.push('')
   }
-  if (data.nextSteps.length > 0) {
+  if (parts.nextSteps.length > 0) {
     lines.push('## 下一步')
-    data.nextSteps.forEach((step, index) => {
-      lines.push(`${index + 1}. ${oneLine(step.step)}${step.why !== '' ? ` —— ${oneLine(step.why)}` : ''}`)
+    parts.nextSteps.forEach((step, index) => {
+      lines.push(`${index + 1}. ${step.step}${step.why !== '' ? ` —— ${step.why}` : ''}`)
     })
     lines.push('')
   }
-  if (data.state.blockers.length > 0) {
+  if (parts.blockers.length > 0) {
     lines.push('## 阻塞与风险')
-    for (const blocker of data.state.blockers) lines.push(`- ${blocker}`)
+    for (const blocker of parts.blockers) lines.push(`- ${blocker}`)
     lines.push('')
   }
-  const references = (data.state.files.length > 0 ? data.state.files : facts.files).slice(0, 12)
   if (references.length > 0) {
     lines.push('## 参考文件')
     for (const file of references) lines.push(`- \`${file}\``)
     lines.push('')
   }
   lines.push('## 交接要求')
-  lines.push('1. 先用 Read 打开交接文档，确认当前状态，不要凭上面的摘要猜测细节。')
-  lines.push('2. 从「下一步」第一项开始执行；如果发现状态与文档不一致，先说明差异再调整计划。')
-  lines.push('3. 需要修改的文件优先在「参考文件」里找；新发现的重要文件补进交接文档。')
-  lines.push('4. 完成后在回复里说明：本次目标、实际改动、验证方式。')
+  parts.requirements.forEach((requirement, index) => lines.push(`${index + 1}. ${requirement}`))
+  return lines.join('\n')
+}
 
-  const text = lines.join('\n')
+/** 新会话提示词：默认组装 + 预算内截断（超预算时改用紧凑版）。 */
+export function buildPromptText(
+  facts: Facts,
+  data: HandoffData,
+  paths: { doc: string; json: string },
+  budget: number,
+): string {
+  const parts = buildPromptParts(facts, data, paths)
+  const text = composePrompt(parts)
   if (text.length <= budget) return text
-  // 超预算时优先丢「已完成」明细与参考文件，保留文件头与下一步。
   const compact: string[] = []
-  compact.push(`# 会话接力：${data.title}`)
+  compact.push(`# 会话接力：${parts.title}`)
   compact.push('')
-  compact.push(`上一会话（\`${facts.sessionId}\`）的交接材料：\`${paths.doc}\`（结构化数据：\`${paths.json}\`）。`)
+  compact.push(`上一会话（\`${parts.sessionId}\`）的交接材料：\`${parts.docPath}\`（结构化数据：\`${parts.dataPath}\`）。`)
   compact.push('')
   compact.push('## 一句话状态')
-  compact.push(data.summary !== '' ? oneLine(data.summary) : '（见交接文档）')
+  compact.push(parts.summary)
   compact.push('')
   compact.push('## 下一步')
-  const steps = data.nextSteps.length > 0 ? data.nextSteps : [{ step: '阅读交接文档确认现状后继续', why: '' }]
+  const steps = parts.nextSteps.length > 0 ? parts.nextSteps : [{ step: '阅读交接文档确认现状后继续', why: '' }]
   steps.slice(0, 6).forEach((step, index) => {
-    compact.push(`${index + 1}. ${oneLine(step.step)}${step.why !== '' ? ` —— ${oneLine(step.why)}` : ''}`)
+    compact.push(`${index + 1}. ${step.step}${step.why !== '' ? ` —— ${step.why}` : ''}`)
   })
   compact.push('')
   compact.push('先读交接文档，再按上面的顺序继续；状态不一致时先说明差异。')

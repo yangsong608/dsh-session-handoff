@@ -18,7 +18,7 @@ import { COLLECT_LIMITS, collectFacts } from './collect.ts'
 import {
   appendWithRoll, createRunDir, exists, resolveInside, slug, stamp, writeAtomic,
 } from './files.ts'
-import { buildPromptText, MEMORY_HEADER, memoryDelta, renderJson, renderMarkdown } from './render.ts'
+import { buildPromptParts, buildPromptText, MEMORY_HEADER, memoryDelta, renderJson, renderMarkdown } from './render.ts'
 import { summarize } from './summary.ts'
 import type {
   Facts, HandoffData, HandoffResult, LlmRuntimeLike, SessionEventLike, SessionHeaderLike,
@@ -26,7 +26,7 @@ import type {
 } from './types.ts'
 
 /** 版本号：与 package.json 保持一致（宿主半不 import JSON，避免 loader 差异）。 */
-export const VERSION = '0.1.0'
+export const VERSION = '0.2.0'
 
 const PREFIX = '[dsh-session-handoff]'
 const ROUTE_HEALTH = '/session-handoff/health'
@@ -269,13 +269,17 @@ async function prepare(
     }
   }
 
-  const promptText = buildPromptText(facts, data, { doc: docPath, json: dataPath }, config.promptCharBudget)
+  const paths = { doc: docPath, json: dataPath }
+  const promptParts = buildPromptParts(facts, data, paths)
+  const promptText = buildPromptText(facts, data, paths, config.promptCharBudget)
   log(ctx, 'info', `交接完成：${sessionId} → ${docPath}（llm=${outcome.llm}${meta.model !== undefined ? `, ${meta.model}` : ''}, ${Date.now() - started}ms）`)
   return {
     ok: true,
     sessionId,
     title: data.title,
     promptText,
+    promptParts,
+    preview: config.preview,
     markdown,
     data,
     docPath,
@@ -331,6 +335,7 @@ export function apply(ctx: HostContextLike, rawConfig?: unknown): void {
         dir: config.dir,
         writeMemory: config.writeMemory,
         autoSend: config.autoSend,
+        preview: config.preview,
         route: config.provider !== '' && config.model !== '' ? `${config.provider}/${config.model}` : 'session',
       },
       warnings,

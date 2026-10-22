@@ -287,10 +287,12 @@ profile 启动
 1. **按钮放在 `conversation.input.right`**：官方 list 座位、当前为空、语义就是「提交前的紧凑控件」；
    父级 owner 是 `conversation.composer.bar` 的 InputBar，随 composer 生命周期自动挂载/卸载。
 2. **总结放宿主半**：日志读取（`sessionQuery`）与模型调用（`llm`）都在宿主侧，浏览器半只做「点一下 + 打开新会话」。
-3. **新会话由浏览器半创建**：`uiWorkspace.startSession(workspaceId?, { prompt })` 是官方导航服务，
+3. **预览与快捷键也是官方座位**：预览卡进 `shell.overlay`（root 级 list，点击穿透），
+   快捷键走 `ctx.shortcuts.register`（声明六个设备档的默认键位）；两者都不碰私有 DOM。
+4. **新会话由浏览器半创建**：`uiWorkspace.startSession(workspaceId?, { prompt })` 是官方导航服务，
    会处理工作区分组、空白会话复用与草稿初始化；宿主半不应该自己造 UI 状态。
-4. **不写会话日志**：交接是「旁路产物」，写日志会污染模型上下文，也会让压缩/回放语义复杂化。
-5. **所有产物落在工作目录**：`<cwd>/.dsh-handoff/…`，可被 Git、编辑器、下个会话的 Read 工具直接消费。
+5. **不写会话日志**：交接是「旁路产物」，写日志会污染模型上下文，也会让压缩/回放语义复杂化。
+6. **所有产物落在工作目录**：`<cwd>/.dsh-handoff/…`，可被 Git、编辑器、下个会话的 Read 工具直接消费。
 
 更细的接缝选择、协议、降级矩阵与成本估算，见 [03 技术设计](./03-技术设计.md)；
 逐项可行性证据见 [04 可行性分析](./04-可行性分析.md)。

@@ -2,7 +2,7 @@
 
 [简体中文](./README.md) | English
 
-> One extra button beside DSH's send button: summarize the current session, consolidate its memory, write a handoff document, and continue in a fresh session that already knows what happened.
+> One extra button beside DSH's send button: summarize the current session, consolidate its memory, write a handoff document, review it in an editable preview, then continue in a fresh session that already knows what happened.
 
 [![dsh-plugin](https://img.shields.io/badge/dsh-plugin-blue)](https://github.com/deepseek-ai/deepseek-harness)
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
@@ -18,7 +18,8 @@ This plugin turns that into one click:
 2. Extract deterministic facts: user asks, assistant progress, tool calls, failures, touched files, model route.
 3. Ask the configured model for a fixed five-part handoff (goal / done / decisions / state / next steps + memory candidates).
 4. Write `WorkSummary.md`, `handoff.json` and a de-duplicated memory ledger into the session workspace.
-5. Open a fresh session in the same workspace with a prompt that points at the handoff document and the reference files.
+5. Show an editable preview (prompt text, reference-file checkboxes, memory candidates) — or skip it with `preview: false`.
+6. Open a fresh session in the same workspace with the confirmed prompt pointing at the handoff document and reference files.
 
 The original session is untouched. Nothing is forked, so the new session starts clean and cheap.
 If the model is unavailable, slow, or returns invalid JSON, the plugin degrades to a deterministic
@@ -57,7 +58,8 @@ Everything is optional. Add a `config:` block to the bundle patch row:
       config:
         dir: .dsh-handoff
         writeMemory: true
-        autoSend: false        # true = send immediately instead of prefilling a draft
+        preview: true          # true = editable preview first; false = open immediately (v0.1)
+        autoSend: false        # when preview is off: send immediately instead of prefilling a draft
         provider: ''           # empty = reuse the session's last request route
         model: ''
         maxTokens: 4096
@@ -78,13 +80,14 @@ Everything is optional. Add a `config:` block to the bundle patch row:
 pnpm install
 pnpm run bundle
 pnpm run typecheck
-pnpm run verify             # 29 artifact-contract checks
-node scripts/smoke.mjs      # 35 host-side end-to-end checks with a fake ctx
-node scripts/smoke-client.mjs # 22 client-bundle checks (real bundle + real React SSR)
-pnpm run check             # everything above
+pnpm run verify             # 31 artifact-contract checks
+node scripts/smoke.mjs      # 38 host-side end-to-end checks with a fake ctx
+node scripts/smoke-client.mjs # 31 client-bundle checks (real bundle + real React SSR)
+node scripts/smoke-parity.mjs # 5 prompt-parity checks (server promptText ≡ client composePrompt)
+pnpm run check              # everything above
 ```
 
-Baseline: DSH `0.2.1-rc.2`, node 24 — `tsc` clean, `verify` 29/29, host `smoke` 35/35, client `smoke:client` 22/22.
+Baseline: DSH `0.2.1-rc.2`, node 24 — `tsc` clean, `verify` 31/31, host `smoke` 38/38, client `smoke:client` 31/31, `parity` 5/5.
 
 ## Docs
 

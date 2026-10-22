@@ -31,6 +31,8 @@ export interface HandoffConfig {
   promptCharBudget: number
   /** 浏览器半在生成后是否直接发送（false = 预填草稿，由用户确认）。 */
   autoSend: boolean
+  /** 生成后是否先展示可编辑预览卡（true）还是直接开新会话（false，v0.1 行为）。 */
+  preview: boolean
   /** 摘要请求的超时毫秒数。 */
   timeoutMs: number
   /** 路由请求体大小上限。 */
@@ -49,6 +51,7 @@ export const DEFAULTS: HandoffConfig = {
   maxToolCalls: 400,
   promptCharBudget: 6000,
   autoSend: false,
+  preview: true,
   timeoutMs: 180_000,
   maxBodyBytes: 256 * 1024,
 }
@@ -119,6 +122,7 @@ export function readConfig(raw: unknown): { config: HandoffConfig; warnings: str
     maxToolCalls: int(source['maxToolCalls'], DEFAULTS.maxToolCalls, 20, 2_000, warnings, 'maxToolCalls'),
     promptCharBudget: int(source['promptCharBudget'], DEFAULTS.promptCharBudget, 1_000, 20_000, warnings, 'promptCharBudget'),
     autoSend: bool(source['autoSend'], DEFAULTS.autoSend, warnings, 'autoSend'),
+    preview: bool(source['preview'], DEFAULTS.preview, warnings, 'preview'),
     timeoutMs: int(source['timeoutMs'], DEFAULTS.timeoutMs, 5_000, 900_000, warnings, 'timeoutMs'),
     maxBodyBytes: int(source['maxBodyBytes'], DEFAULTS.maxBodyBytes, 1_024, 4 * 1024 * 1024, warnings, 'maxBodyBytes'),
   }

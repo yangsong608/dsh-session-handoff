@@ -98,6 +98,7 @@ All design docs are currently in Chinese:
 - [03 Technical design](./docs/03-技术设计.md)
 - [04 Feasibility analysis](./docs/04-可行性分析.md)
 - [05 Product design](./docs/05-产品设计.md)
+- [06 v0.2 plan & delivery](./docs/06-v0.2实施计划与交付.md)
 
 ## License
 

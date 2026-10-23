@@ -63,6 +63,7 @@ if (client !== '') {
   check('浏览器半以 __ModuleLoader__.load 开头', client.trimStart().startsWith('window.__ModuleLoader__.load({'))
   check('浏览器半注册的 id 等于包名', client.includes('id: "dsh-session-handoff"'))
   check('浏览器半注册到 conversation.input.right 座位', client.includes('conversation.input.right'))
+  check('浏览器半使用包名限定的唯一 cell id', client.includes('dsh-session-handoff-preview'))
   check('浏览器半注册预览卡到 shell.overlay', client.includes('shell.overlay'))
   check('浏览器半注册快捷键 session.handoff', client.includes('session.handoff'))
   check('浏览器半带降级座位 header.utilities', client.includes('conversation.session.header.utilities'))

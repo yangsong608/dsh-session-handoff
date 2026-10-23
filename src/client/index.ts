@@ -245,13 +245,21 @@ function registerButton(ctx: ClientContextLike, canLocale: boolean, run: NonNull
   const seats = ['conversation.input.right', 'conversation.session.header.utilities']
   for (const seat of seats) {
     try {
-      ctx.slots.inject(seat, () => ctx.slots.register({
-        name: seat,
-        id: 'session-handoff',
-        order: 40,
-        ...(canLocale ? { locale: NS } : {}),
-        inject: () => ({ run }),
-      }, HandoffButton))
+      ctx.slots.inject(seat, () => {
+        try {
+          return ctx.slots.register({
+            name: seat,
+            id: 'dsh-session-handoff',
+            order: 40,
+            ...(canLocale ? { locale: NS } : {}),
+            inject: () => ({ run }),
+          }, HandoffButton)
+        } catch (cause) {
+          // 唯一 id 冲突/重复注册只应让本按钮缺席，不能影响同座位的其他插件。
+          console.warn(`[dsh-session-handoff] 按钮注册失败（其他条目不受影响）：${errorMessage(cause)}`)
+          return undefined
+        }
+      })
       return true
     } catch (cause) {
       console.warn(`[dsh-session-handoff] 座位 ${seat} 不可用：${errorMessage(cause)}`)
@@ -277,12 +285,19 @@ function registerPreview(ctx: ClientContextLike): boolean {
     close: () => { previewStore.idle() },
   }
   try {
-    ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-      name: 'shell.overlay',
-      id: 'session-handoff-preview',
-      order: 900,
-      inject: () => face,
-    }, PreviewCard))
+    ctx.slots.inject('shell.overlay', () => {
+      try {
+        return ctx.slots.register({
+          name: 'shell.overlay',
+          id: 'dsh-session-handoff-preview',
+          order: 900,
+          inject: () => face,
+        }, PreviewCard)
+      } catch (cause) {
+        console.warn(`[dsh-session-handoff] 预览卡注册失败（其他条目不受影响）：${errorMessage(cause)}`)
+        return undefined
+      }
+    })
     return true
   } catch (cause) {
     console.warn(`[dsh-session-handoff] 预览座位 shell.overlay 不可用：${errorMessage(cause)}`)
@@ -355,7 +370,7 @@ export function apply(ctx: ClientContextLike): void {
 }
 
 /** 供测试/二次开发引用：内部座位 id。 */
-export const SEAT_ID = 'session-handoff'
+export const SEAT_ID = 'dsh-session-handoff'
 
 /** 提示词组装（与服务端逐字一致，parity 测试使用）。 */
 export { composePrompt } from './compose.ts'

@@ -26,7 +26,7 @@ import type {
 } from './types.ts'
 
 /** 版本号：与 package.json 保持一致（宿主半不 import JSON，避免 loader 差异）。 */
-export const VERSION = '0.2.3'
+export const VERSION = '0.2.4'
 
 const PREFIX = '[dsh-session-handoff]'
 const ROUTE_HEALTH = '/session-handoff/health'

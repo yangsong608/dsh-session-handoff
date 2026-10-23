@@ -170,8 +170,8 @@ const previewFace = overlay?.options.inject?.()
 
 check('bundle id 正确', env.captured()?.id === 'dsh-session-handoff')
 check('导出 apply/inject', typeof exports.apply === 'function' && Array.isArray(exports.inject))
-check('注册按钮到 input.right', button !== undefined && button.options.id === 'session-handoff' && button.options.order === 40)
-check('注册预览卡到 shell.overlay', overlay !== undefined && previewFace !== undefined && typeof previewFace.open === 'function')
+check('注册按钮到 input.right（唯一 id）', button !== undefined && button.options.id === 'dsh-session-handoff' && button.options.order === 40)
+check('注册预览卡到 shell.overlay（唯一 id）', overlay !== undefined && overlay.options.id === 'dsh-session-handoff-preview' && previewFace !== undefined && typeof previewFace.open === 'function')
 check('注册快捷键 session.handoff', shortcut.command?.id === 'session.handoff')
 check('快捷键默认 Cmd/Ctrl+Shift+H', shortcut.command?.defaults?.['desktop:macos']?.code === 'KeyH'
   && shortcut.command?.defaults?.['desktop:macos']?.modifiers?.includes('primary')

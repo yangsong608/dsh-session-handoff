@@ -93,7 +93,7 @@ async function call(path, request) {
   return { status: response.status, json: JSON.parse(response.body || '{}') }
 }
 
-check('暴露版本号', VERSION === '0.2.3', VERSION)
+check('暴露版本号', VERSION === '0.2.4', VERSION)
 check('注册 health 路由', routes.has('/session-handoff/health'))
 check('注册 prepare 路由', routes.has('/session-handoff/prepare'))
 

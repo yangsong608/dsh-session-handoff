@@ -93,7 +93,7 @@ async function call(path, request) {
   return { status: response.status, json: JSON.parse(response.body || '{}') }
 }
 
-check('暴露版本号', VERSION === '0.2.4', VERSION)
+check('暴露版本号', VERSION === '0.2.5', VERSION)
 check('注册 health 路由', routes.has('/session-handoff/health'))
 check('注册 prepare 路由', routes.has('/session-handoff/prepare'))
 
@@ -385,6 +385,31 @@ const routeConfig = { provider: 'deepseek', model: 'deepseek-chat' }
   check('参考文件保留真实存在的路径', (result.promptParts?.referenceOptions ?? []).includes(existing), JSON.stringify(result.promptParts?.referenceOptions))
   check('参考文件丢弃不存在的绝对路径', !result.promptText.includes(missing) && !(result.promptParts?.referenceOptions ?? []).includes(missing))
   await rm(base, { recursive: true, force: true })
+}
+
+// 路由必须随 fiber 释放：否则热重载后重复路径会让下一次 apply 失败（线上实测）。
+{
+  const routeMap = new Map()
+  const disposers = []
+  const ctx = {
+    webServer: {
+      register(route) {
+        if (routeMap.has(route.path)) throw new Error(`webserver: duplicate exact route "${route.path}"`)
+        routeMap.set(route.path, route.handler)
+        return () => { routeMap.delete(route.path) }
+      },
+    },
+    effect(callback) { const dispose = callback(); disposers.push(dispose); return dispose },
+    logger: { info() {}, warn() {} },
+    get() { return undefined },
+  }
+  apply(ctx, { dir: '.dsh-handoff', writeMemory: false })
+  check('apply 注册了 health/prepare 路由', routeMap.has('/session-handoff/health') && routeMap.has('/session-handoff/prepare'))
+  for (const dispose of disposers.splice(0).reverse()) dispose()
+  check('fiber 释放后路由被清理', !routeMap.has('/session-handoff/health') && !routeMap.has('/session-handoff/prepare'))
+  let reloadError
+  try { apply(ctx, { dir: '.dsh-handoff', writeMemory: false }) } catch (cause) { reloadError = cause }
+  check('重新 apply 不因重复路由失败', reloadError === undefined && routeMap.has('/session-handoff/health'), reloadError?.message)
 }
 
 await rm(cwd, { recursive: true, force: true })

@@ -26,7 +26,7 @@ import type {
 } from './types.ts'
 
 /** 版本号：与 package.json 保持一致（宿主半不 import JSON，避免 loader 差异）。 */
-export const VERSION = '0.2.4'
+export const VERSION = '0.2.5'
 
 const PREFIX = '[dsh-session-handoff]'
 const ROUTE_HEALTH = '/session-handoff/health'
@@ -340,7 +340,18 @@ export function apply(ctx: HostContextLike, rawConfig?: unknown): void {
       log(ctx, 'warn', '缺少 webServer，交接端点未注册')
       return
     }
-    webServer.register({ kind: 'exact', path, handler })
+    const bind = (): (() => void) => webServer.register({ kind: 'exact', path, handler })
+    // cordis 的 webServer.register 返回 disposer；不把它挂到 fiber 上，
+    // 插件热重载/重复激活时旧路由仍在，第二次 apply 会因重复路径直接失败。
+    if (typeof ctx.effect === 'function') {
+      try {
+        ctx.effect(() => bind(), `dsh-session-handoff: route ${path}`)
+        return
+      } catch (cause) {
+        log(ctx, 'warn', `路由 ${path} 未能绑定 fiber，改为直接注册：${cause instanceof Error ? cause.message : String(cause)}`)
+      }
+    }
+    bind()
   }
 
   register(ROUTE_HEALTH, (req, res) => {
